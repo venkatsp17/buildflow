@@ -1,0 +1,17 @@
+# Backend (Go)
+backend/tmp/
+backend/*.exe
+backend/bin/
+backend/.env
+backend/.aws-sam/
+
+# Frontend (Expo / Node)
+frontend/node_modules/
+frontend/.expo/
+frontend/dist/
+frontend/web-build/
+frontend/.env
+
+# General
+.DS_Store
+*.log
