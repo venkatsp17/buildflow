@@ -1,12 +1,13 @@
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 
-import { login as apiLogin, me as apiMe, signup as apiSignup, type User } from '@/api/client';
+import { login as apiLogin, me as apiMe, signup as apiSignup, setUnauthorizedHandler, type User } from '@/api/client';
 import { clearToken, getToken, setToken as persistToken } from '@/auth/tokenStorage';
 
 type AuthContextValue = {
   token: string | null;
   user: User | null;
   isLoading: boolean;
+  sessionExpired: boolean;
   login: (email: string, password: string) => Promise<void>;
   signup: (email: string, password: string, role: string) => Promise<void>;
   logout: () => Promise<void>;
@@ -18,6 +19,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [sessionExpired, setSessionExpired] = useState(false);
 
   // On app start, restore a persisted token and re-fetch the user via the
   // protected /auth/me route (also proves the JWT middleware works end-to-end).
@@ -37,11 +39,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     })();
   }, []);
 
+  const logout = useCallback(async (reason?: 'expired') => {
+    await clearToken();
+    setToken(null);
+    setUser(null);
+    setSessionExpired(reason === 'expired');
+  }, []);
+
+  // Any authenticated API call that comes back 401 (expired/invalid token)
+  // triggers this, which clears the session and bounces to the login screen
+  // via the (app) layout's auth guard.
+  useEffect(() => {
+    setUnauthorizedHandler(() => {
+      logout('expired');
+    });
+  }, [logout]);
+
   const login = async (email: string, password: string) => {
     const { token: newToken, user: newUser } = await apiLogin(email, password);
     await persistToken(newToken);
     setToken(newToken);
     setUser(newUser);
+    setSessionExpired(false);
   };
 
   const signup = async (email: string, password: string, role: string) => {
@@ -49,17 +68,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await persistToken(newToken);
     setToken(newToken);
     setUser(newUser);
-  };
-
-  const logout = async () => {
-    await clearToken();
-    setToken(null);
-    setUser(null);
+    setSessionExpired(false);
   };
 
   const value = useMemo(
-    () => ({ token, user, isLoading, login, signup, logout }),
-    [token, user, isLoading],
+    () => ({ token, user, isLoading, sessionExpired, login, signup, logout }),
+    [token, user, isLoading, sessionExpired, logout],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -9,6 +9,7 @@ import (
 
 	"tracker-backend/internal/handlers"
 	"tracker-backend/internal/middleware"
+	"tracker-backend/internal/models"
 )
 
 // NewRouter builds the Gin engine shared by both the local HTTP server
@@ -19,6 +20,12 @@ func NewRouter(db *gorm.DB, jwtSecret string, corsAllowedOrigins []string) *gin.
 
 	health := handlers.NewHealthHandler(db)
 	authHandler := handlers.NewAuthHandler(db, jwtSecret)
+	orderHandler := handlers.NewOrderHandler(db)
+	customerHandler := handlers.NewCustomerHandler(db)
+	productHandler := handlers.NewProductHandler(db)
+	geocodeHandler := handlers.NewGeocodeHandler()
+	priceListHandler := handlers.NewPriceListHandler(db)
+	userHandler := handlers.NewUserHandler(db)
 
 	router.GET("/health", health.Health)
 
@@ -26,6 +33,27 @@ func NewRouter(db *gorm.DB, jwtSecret string, corsAllowedOrigins []string) *gin.
 	authGroup.POST("/signup", authHandler.Signup)
 	authGroup.POST("/login", authHandler.Login)
 	authGroup.GET("/me", middleware.RequireAuth(jwtSecret), authHandler.Me)
+
+	orderGroup := router.Group("/orders", middleware.RequireAuth(jwtSecret))
+	orderGroup.GET("", orderHandler.List)
+	orderGroup.GET("/summary", orderHandler.Summary)
+	orderGroup.GET("/:id", orderHandler.Detail)
+	orderGroup.POST("", middleware.RequireRole(string(models.RoleSales)), orderHandler.Create)
+
+	router.GET("/customers", middleware.RequireAuth(jwtSecret), customerHandler.List)
+	router.GET("/products", middleware.RequireAuth(jwtSecret), productHandler.List)
+	router.GET("/geocode/search", middleware.RequireAuth(jwtSecret), geocodeHandler.Search)
+
+	managerOnly := middleware.RequireRole(string(models.RoleManager))
+
+	priceListGroup := router.Group("/price-lists", middleware.RequireAuth(jwtSecret), managerOnly)
+	priceListGroup.GET("", priceListHandler.List)
+	priceListGroup.GET("/:id", priceListHandler.Detail)
+	priceListGroup.POST("", priceListHandler.Create)
+	priceListGroup.PUT("/:id", priceListHandler.Update)
+
+	router.GET("/users", middleware.RequireAuth(jwtSecret), managerOnly, userHandler.List)
+	router.PATCH("/users/:id/price-list", middleware.RequireAuth(jwtSecret), managerOnly, userHandler.AssignPriceList)
 
 	return router
 }

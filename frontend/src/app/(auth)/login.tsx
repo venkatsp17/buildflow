@@ -7,7 +7,7 @@ import { colors, radius } from '@/constants/theme';
 import { useAuth } from '@/auth/AuthContext';
 
 export default function Login() {
-  const { login } = useAuth();
+  const { login, sessionExpired } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -32,6 +32,10 @@ export default function Login() {
       <AuthHeader title="Welcome back." subtitle="Log in to your account" />
 
       <View style={styles.card}>
+        {sessionExpired && (
+          <Text style={styles.sessionExpired}>Your session expired. Please log in again.</Text>
+        )}
+
         <Text style={styles.fieldLabel}>EMAIL</Text>
         <TextInput
           style={styles.input}
@@ -90,6 +94,15 @@ const styles = StyleSheet.create({
     color: colors.text,
   },
   error: { color: colors.error, marginTop: 12 },
+  sessionExpired: {
+    color: colors.navy,
+    backgroundColor: colors.amberMuted,
+    borderRadius: radius.sm,
+    padding: 10,
+    fontSize: 13,
+    marginBottom: 8,
+    textAlign: 'center',
+  },
   submitButton: {
     marginTop: 20,
     backgroundColor: colors.navy,

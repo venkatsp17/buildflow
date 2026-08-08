@@ -13,8 +13,8 @@ export function AuthHeader({ title, subtitle }: Props) {
           <Ionicons name="cube-outline" size={22} color={colors.navy} />
         </View>
         <View>
-          <Text style={styles.brandName}>Tracker</Text>
-          <Text style={styles.brandTagline}>Team Workspace</Text>
+          <Text style={styles.brandName}>BuildFlow</Text>
+          <Text style={styles.brandTagline}>Manufacturing Order System</Text>
         </View>
       </View>
       <Text style={styles.title}>{title}</Text>
