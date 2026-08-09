@@ -36,10 +36,16 @@ const PRIORITIES = [
   { value: 'low', label: 'Low' },
 ] as const;
 
-type ItemDraft = { productName: string; quantity: string; unitPrice: number | null; description: string };
+type ItemDraft = {
+  productId: number | null;
+  productName: string;
+  quantity: string;
+  unitPrice: number | null;
+  description: string;
+};
 
 function emptyItem(): ItemDraft {
-  return { productName: '', quantity: '', unitPrice: null, description: '' };
+  return { productId: null, productName: '', quantity: '', unitPrice: null, description: '' };
 }
 
 const CURRENCY = '₹';
@@ -145,7 +151,7 @@ export function NewOrderModal({ visible, onClose, onCreated }: Props) {
     };
   }, [token, debouncedAddress]);
 
-  const hasValidItems = items.some((item) => item.productName.trim() && Number(item.quantity) > 0);
+  const hasValidItems = items.some((item) => item.productId && Number(item.quantity) > 0);
   const canSubmit = !!clientName.trim() && !!dueDate && !!city.trim() && hasValidItems && !isSubmitting;
   const orderTotal = items.reduce((sum, item) => sum + lineTotal(item), 0);
   const totalUnits = items.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
@@ -193,12 +199,11 @@ export function NewOrderModal({ visible, onClose, onCreated }: Props) {
         urgency,
         dueDate,
         items: items
-          .filter((item) => item.productName.trim() && Number(item.quantity) > 0)
+          .filter((item) => item.productId && Number(item.quantity) > 0)
           .map((item) => ({
-            productName: item.productName.trim(),
+            productId: item.productId as number,
             description: item.description.trim() || undefined,
             quantity: Number(item.quantity),
-            unit: 'units',
           })),
       });
       resetForm();
@@ -312,10 +317,11 @@ export function NewOrderModal({ visible, onClose, onCreated }: Props) {
                   placeholder="Select product..."
                   value={item.productName}
                   onChangeText={(text) => {
-                    // Clear the price whenever the text no longer matches a
+                    // Clear the match whenever the text no longer reflects a
                     // confirmed catalog selection — it must come from picking
-                    // a suggestion below, never be typed in directly.
-                    updateItem(index, { productName: text, unitPrice: null });
+                    // a suggestion below, never be typed in directly (there's
+                    // no way to order a product that isn't in the catalog).
+                    updateItem(index, { productName: text, productId: null, unitPrice: null });
                     setActiveProductIndex(index);
                   }}
                   onFocus={() => setActiveProductIndex(index)}
@@ -329,6 +335,7 @@ export function NewOrderModal({ visible, onClose, onCreated }: Props) {
                       style={[styles.suggestionRow, styles.suggestionRowBetween]}
                       onPress={() => {
                         updateItem(index, {
+                          productId: product.id,
                           productName: product.name,
                           description: product.description || item.description,
                           unitPrice: product.unitPrice ?? null,
@@ -347,6 +354,9 @@ export function NewOrderModal({ visible, onClose, onCreated }: Props) {
                     </Pressable>
                   ))}
                 </View>
+              )}
+              {!item.productId && !!item.productName && (
+                <Text style={styles.itemWarning}>Pick a product from the list above</Text>
               )}
 
               <View style={styles.itemFieldsRow}>
@@ -575,6 +585,7 @@ const styles = StyleSheet.create({
   },
   itemCardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   itemLabel: { fontSize: 11, fontWeight: '700', color: colors.textMuted, letterSpacing: 0.5 },
+  itemWarning: { fontSize: 11, color: colors.error },
   itemFieldsRow: { flexDirection: 'row', gap: 8 },
   qtyInput: { flex: 1 },
   notesFullInput: { marginTop: 8 },

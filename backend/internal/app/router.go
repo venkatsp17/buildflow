@@ -56,18 +56,23 @@ func NewRouter(db *gorm.DB, jwtSecret string, corsAllowedOrigins []string) *gin.
 	pushTokenGroup.DELETE("", pushTokenHandler.Unregister)
 
 	router.GET("/customers", middleware.RequireAuth(db, jwtSecret), customerHandler.List)
-	router.GET("/products", middleware.RequireAuth(db, jwtSecret), productHandler.List)
 	router.GET("/geocode/search", middleware.RequireAuth(db, jwtSecret), geocodeHandler.Search)
 
 	managerOnly := middleware.RequireRole(string(models.RoleManager))
+	superUserOnly := middleware.RequireSuperUser()
+
+	router.GET("/products", middleware.RequireAuth(db, jwtSecret), productHandler.List)
+	// Narrower than managerOnly, same as accounts below: every manager can
+	// create accounts, but only a super user manager can curate the product
+	// catalog (create or disable/enable a product).
+	router.POST("/products", middleware.RequireAuth(db, jwtSecret), managerOnly, superUserOnly, productHandler.Create)
+	router.PATCH("/products/:id/active", middleware.RequireAuth(db, jwtSecret), managerOnly, superUserOnly, productHandler.SetActive)
 
 	priceListGroup := router.Group("/price-lists", middleware.RequireAuth(db, jwtSecret), managerOnly)
 	priceListGroup.GET("", priceListHandler.List)
 	priceListGroup.GET("/:id", priceListHandler.Detail)
 	priceListGroup.POST("", priceListHandler.Create)
 	priceListGroup.PUT("/:id", priceListHandler.Update)
-
-	superUserOnly := middleware.RequireSuperUser()
 
 	router.GET("/users", middleware.RequireAuth(db, jwtSecret), managerOnly, userHandler.List)
 	router.POST("/users", middleware.RequireAuth(db, jwtSecret), managerOnly, userHandler.CreateUser)

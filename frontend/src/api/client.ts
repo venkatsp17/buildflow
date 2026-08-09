@@ -112,6 +112,7 @@ export type Product = {
   name: string;
   unit: string;
   description: string;
+  active: boolean;
   unitPrice?: number;
 };
 
@@ -128,9 +129,39 @@ export function searchCustomers(token: string, search: string): Promise<{ custom
   });
 }
 
-export function searchProducts(token: string, search: string): Promise<{ products: Product[] }> {
-  return request<{ products: Product[] }>(`/products?search=${encodeURIComponent(search)}`, {
+export function searchProducts(
+  token: string,
+  search: string,
+  includeInactive = false,
+): Promise<{ products: Product[] }> {
+  const query = new URLSearchParams({ search });
+  if (includeInactive) query.set('includeInactive', 'true');
+  return request<{ products: Product[] }>(`/products?${query.toString()}`, {
     headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export type CreateProductInput = {
+  name: string;
+  unit: string;
+  description?: string;
+};
+
+// Products are a super-user-curated catalog — order creation and price
+// lists can only pick from what's already here, never invent a new entry.
+export function createProduct(token: string, input: CreateProductInput): Promise<{ product: Product }> {
+  return request<{ product: Product }>('/products', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(input),
+  });
+}
+
+export function setProductActive(token: string, productId: number, active: boolean): Promise<{ product: Product }> {
+  return request<{ product: Product }>(`/products/${productId}/active`, {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ active }),
   });
 }
 
@@ -239,7 +270,7 @@ export type CreateOrderInput = {
   urgency: string;
   currency?: string;
   dueDate: string;
-  items: { productName: string; description?: string; quantity: number; unit: string }[];
+  items: { productId: number; description?: string; quantity: number }[];
 };
 
 export function createOrder(token: string, input: CreateOrderInput): Promise<{ order: Order }> {

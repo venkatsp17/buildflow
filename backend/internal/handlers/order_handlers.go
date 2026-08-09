@@ -371,10 +371,9 @@ func (h *OrderHandler) ManagerDashboard(c *gin.Context) {
 }
 
 type orderItemRequest struct {
-	ProductName string `json:"productName" binding:"required"`
+	ProductID   uint   `json:"productId" binding:"required"`
 	Description string `json:"description"`
 	Quantity    int    `json:"quantity" binding:"required,min=1"`
-	Unit        string `json:"unit" binding:"required"`
 }
 
 type createOrderRequest struct {
@@ -409,22 +408,14 @@ func findOrCreateCustomer(db *gorm.DB, name string, userID uint) (models.Custome
 	return customer, nil
 }
 
-// findOrCreateProduct looks up a Product by case-insensitive exact name
-// match, creating one if none exists.
-func findOrCreateProduct(db *gorm.DB, name, unit string, userID uint) (models.Product, error) {
+// findActiveProduct looks up an existing, active Product by ID. Products are
+// a super-user-curated catalog (see ProductHandler.Create) — order creation
+// can only reference what's already there, never invent a new entry on the
+// fly, so there's no "or create" fallback here unlike findOrCreateCustomer.
+func findActiveProduct(db *gorm.DB, id uint) (models.Product, error) {
 	var product models.Product
-	err := db.Where("LOWER(name) = LOWER(?)", name).First(&product).Error
-	if err == nil {
-		return product, nil
-	}
-	if !errors.Is(err, gorm.ErrRecordNotFound) {
-		return product, err
-	}
-	product = models.Product{Name: name, Unit: unit, CreatedByID: userID}
-	if err := db.Create(&product).Error; err != nil {
-		return product, err
-	}
-	return product, nil
+	err := db.Where("id = ? AND active = ?", id, true).First(&product).Error
+	return product, err
 }
 
 // Create creates a new order for the authenticated (sales) user. Ticket
@@ -470,8 +461,12 @@ func (h *OrderHandler) Create(c *gin.Context) {
 	items := make([]models.OrderItem, len(req.Items))
 	var value float64
 	for i, item := range req.Items {
-		product, err := findOrCreateProduct(h.DB, item.ProductName, item.Unit, userID)
+		product, err := findActiveProduct(h.DB, item.ProductID)
 		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "one of the selected products is no longer available"})
+				return
+			}
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to resolve product"})
 			return
 		}
@@ -481,7 +476,7 @@ func (h *OrderHandler) Create(c *gin.Context) {
 			ProductName: product.Name,
 			Description: item.Description,
 			Quantity:    item.Quantity,
-			Unit:        item.Unit,
+			Unit:        product.Unit,
 			UnitPrice:   unitPrice,
 		}
 		value += float64(item.Quantity) * unitPrice

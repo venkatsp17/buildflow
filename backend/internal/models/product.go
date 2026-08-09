@@ -7,6 +7,7 @@ type Product struct {
 	Name        string    `gorm:"uniqueIndex;not null" json:"name"`
 	Unit        string    `gorm:"not null;default:units" json:"unit"`
 	Description string    `json:"description"`
+	Active      bool      `gorm:"not null;default:true" json:"active"`
 	CreatedByID uint      `gorm:"not null;index" json:"createdById"`
 	CreatedAt   time.Time `json:"createdAt"`
 	UpdatedAt   time.Time `json:"updatedAt"`

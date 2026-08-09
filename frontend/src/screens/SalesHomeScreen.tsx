@@ -48,12 +48,13 @@ export function SalesHomeScreen() {
         urgency: source.urgency,
         currency: source.currency,
         dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
-        items: source.items.map((item) => ({
-          productName: item.productName,
-          description: item.description,
-          quantity: item.quantity,
-          unit: item.unit,
-        })),
+        items: source.items
+          .filter((item) => item.productId != null)
+          .map((item) => ({
+            productId: item.productId as number,
+            description: item.description,
+            quantity: item.quantity,
+          })),
       });
       await Promise.all([reload(), reloadPriority()]);
       Alert.alert(

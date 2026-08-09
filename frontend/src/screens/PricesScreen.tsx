@@ -2,8 +2,20 @@ import { Ionicons } from '@expo/vector-icons';
 import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
-import { assignPriceList, getPriceList, listPriceLists, listUsers, setUserActive, type PriceList, type User } from '@/api/client';
+import {
+  assignPriceList,
+  getPriceList,
+  listPriceLists,
+  listUsers,
+  searchProducts,
+  setProductActive,
+  setUserActive,
+  type PriceList,
+  type Product,
+  type User,
+} from '@/api/client';
 import { useAuth } from '@/auth/AuthContext';
+import { CreateProductModal } from '@/components/CreateProductModal';
 import { CreateUserModal } from '@/components/CreateUserModal';
 import { PriceListModal } from '@/components/PriceListModal';
 import { StatusActionModal } from '@/components/StatusActionModal';
@@ -15,6 +27,7 @@ export function PricesScreen() {
 
   const [priceLists, setPriceLists] = useState<PriceList[]>([]);
   const [users, setUsers] = useState<User[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -25,16 +38,27 @@ export function PricesScreen() {
   const [confirmingDisable, setConfirmingDisable] = useState<User | null>(null);
   const [isSubmittingActive, setIsSubmittingActive] = useState(false);
 
+  const [isCreateProductOpen, setIsCreateProductOpen] = useState(false);
+  const [managingProduct, setManagingProduct] = useState<Product | null>(null);
+  const [confirmingProductDisable, setConfirmingProductDisable] = useState<Product | null>(null);
+  const [isSubmittingProductActive, setIsSubmittingProductActive] = useState(false);
+
+  const isSuperUser = !!currentUser?.isSuperUser;
+
   const load = useCallback(async () => {
     if (!token) return;
     setError(null);
     try {
-      const [{ priceLists: lists }, { users: allUsers }] = await Promise.all([
+      const [{ priceLists: lists }, { users: allUsers }, { products: allProducts }] = await Promise.all([
         listPriceLists(token),
         listUsers(token),
+        // includeInactive is only honored server-side for a super user —
+        // everyone else just gets the active catalog back.
+        searchProducts(token, '', true),
       ]);
       setPriceLists(lists);
       setUsers(allUsers);
+      setProducts(allProducts);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load data');
     } finally {
@@ -101,6 +125,26 @@ export function PricesScreen() {
     }
   };
 
+  const handleProductCreated = () => {
+    setIsCreateProductOpen(false);
+    load();
+  };
+
+  const handleConfirmProductActiveChange = async () => {
+    if (!token || !confirmingProductDisable) return;
+    setIsSubmittingProductActive(true);
+    try {
+      await setProductActive(token, confirmingProductDisable.id, !confirmingProductDisable.active);
+      setConfirmingProductDisable(null);
+      setManagingProduct(null);
+      load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update product');
+    } finally {
+      setIsSubmittingProductActive(false);
+    }
+  };
+
   return (
     <View style={styles.screen}>
       <ScrollView contentContainerStyle={styles.content}>
@@ -145,6 +189,40 @@ export function PricesScreen() {
               <Ionicons name="add" size={18} color={colors.navy} />
               <Text style={styles.addButtonText}>New Price List</Text>
             </Pressable>
+
+            <View style={styles.sectionHeaderRow}>
+              <Text style={styles.sectionTitle}>Products</Text>
+              <Text style={styles.sectionCount}>{products.length}</Text>
+            </View>
+
+            {products.map((product) => (
+              <Pressable key={product.id} style={styles.card} onPress={() => setManagingProduct(product)}>
+                <View style={[styles.cardIcon, !product.active && styles.cardIconDisabled]}>
+                  <Ionicons name="cube-outline" size={18} color={product.active ? colors.navy : colors.gray} />
+                </View>
+                <View style={styles.cardBody}>
+                  <View style={styles.cardTitleRow}>
+                    <Text style={styles.cardTitle}>{product.name}</Text>
+                    {!product.active && (
+                      <View style={styles.disabledPill}>
+                        <Text style={styles.disabledPillText}>Disabled</Text>
+                      </View>
+                    )}
+                  </View>
+                  <Text style={styles.cardSubtitle}>{product.unit}</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+              </Pressable>
+            ))}
+
+            {products.length === 0 && <Text style={styles.emptyText}>No products yet.</Text>}
+
+            {isSuperUser && (
+              <Pressable style={styles.addButton} onPress={() => setIsCreateProductOpen(true)}>
+                <Ionicons name="add" size={18} color={colors.navy} />
+                <Text style={styles.addButtonText}>New Product</Text>
+              </Pressable>
+            )}
 
             <View style={styles.sectionHeaderRow}>
               <Text style={styles.sectionTitle}>Team</Text>
@@ -205,6 +283,12 @@ export function PricesScreen() {
         onCreated={handleUserCreated}
       />
 
+      <CreateProductModal
+        visible={isCreateProductOpen}
+        onClose={() => setIsCreateProductOpen(false)}
+        onCreated={handleProductCreated}
+      />
+
       {managingUser && (
         <View style={styles.overlay}>
           <Pressable style={StyleSheet.absoluteFill} onPress={() => setManagingUser(null)} />
@@ -232,7 +316,7 @@ export function PricesScreen() {
               </>
             )}
 
-            {!currentUser?.isSuperUser ? (
+            {!isSuperUser ? (
               <Text style={styles.selfNote}>Only a super user can disable or enable accounts.</Text>
             ) : managingUser.id === currentUser?.id ? (
               <Text style={styles.selfNote}>You can't disable your own account.</Text>
@@ -265,6 +349,53 @@ export function PricesScreen() {
         isSubmitting={isSubmittingActive}
         onCancel={() => setConfirmingDisable(null)}
         onConfirm={handleConfirmActiveChange}
+      />
+
+      {managingProduct && (
+        <View style={styles.overlay}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setManagingProduct(null)} />
+          <View style={styles.assignSheet}>
+            <View style={styles.dragHandle} />
+            <Text style={styles.title}>{managingProduct.name}</Text>
+            <Text style={styles.subtitle}>
+              {managingProduct.unit}
+              {managingProduct.description ? ` · ${managingProduct.description}` : ''}
+            </Text>
+
+            {!isSuperUser ? (
+              <Text style={styles.selfNote}>Only a super user can disable or enable products.</Text>
+            ) : (
+              <Pressable
+                style={[
+                  styles.disableButton,
+                  managingProduct.active ? styles.disableButtonDanger : styles.disableButtonEnable,
+                ]}
+                onPress={() => setConfirmingProductDisable(managingProduct)}
+              >
+                <Text style={[styles.disableButtonText, !managingProduct.active && styles.enableButtonText]}>
+                  {managingProduct.active ? 'Disable Product' : 'Enable Product'}
+                </Text>
+              </Pressable>
+            )}
+          </View>
+        </View>
+      )}
+
+      <StatusActionModal
+        visible={!!confirmingProductDisable}
+        title={confirmingProductDisable?.active ? 'Disable product?' : 'Enable product?'}
+        message={
+          confirmingProductDisable
+            ? confirmingProductDisable.active
+              ? `${confirmingProductDisable.name} can no longer be selected for new orders or price lists. Existing ones keep it.`
+              : `${confirmingProductDisable.name} will be selectable again.`
+            : ''
+        }
+        confirmLabel={confirmingProductDisable?.active ? 'Disable' : 'Enable'}
+        danger={confirmingProductDisable?.active}
+        isSubmitting={isSubmittingProductActive}
+        onCancel={() => setConfirmingProductDisable(null)}
+        onConfirm={handleConfirmProductActiveChange}
       />
     </View>
   );
