@@ -5,8 +5,10 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 
 	"tracker-backend/internal/auth"
+	"tracker-backend/internal/models"
 )
 
 const (
@@ -15,8 +17,11 @@ const (
 )
 
 // RequireAuth validates the Authorization: Bearer <token> header and stores
-// the authenticated user ID in the request context, or aborts with 401.
-func RequireAuth(jwtSecret string) gin.HandlerFunc {
+// the authenticated user ID in the request context, or aborts with 401. It
+// also checks the user is still active on every request (not just at login)
+// so a manager disabling an account takes effect immediately, rather than
+// leaving already-issued tokens valid until they naturally expire.
+func RequireAuth(db *gorm.DB, jwtSecret string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		header := c.GetHeader("Authorization")
 		if header == "" {
@@ -33,6 +38,12 @@ func RequireAuth(jwtSecret string) gin.HandlerFunc {
 		claims, err := auth.ParseToken(parts[1], jwtSecret)
 		if err != nil {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid or expired token"})
+			return
+		}
+
+		var user models.User
+		if err := db.Select("active").First(&user, claims.UserID).Error; err != nil || !user.Active {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "account disabled"})
 			return
 		}
 

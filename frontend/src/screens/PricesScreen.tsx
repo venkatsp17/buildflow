@@ -2,34 +2,40 @@ import { Ionicons } from '@expo/vector-icons';
 import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
-import { assignPriceList, getPriceList, listPriceLists, listUsers, type PriceList, type User } from '@/api/client';
+import { assignPriceList, getPriceList, listPriceLists, listUsers, setUserActive, type PriceList, type User } from '@/api/client';
 import { useAuth } from '@/auth/AuthContext';
+import { CreateUserModal } from '@/components/CreateUserModal';
 import { PriceListModal } from '@/components/PriceListModal';
+import { StatusActionModal } from '@/components/StatusActionModal';
 import { colors, radius } from '@/constants/theme';
+import { roleLabel } from '@/constants/roles';
 import { displayName } from '@/utils/format';
 
 export function PricesScreen() {
-  const { logout, token } = useAuth();
+  const { logout, token, user: currentUser } = useAuth();
 
   const [priceLists, setPriceLists] = useState<PriceList[]>([]);
-  const [salesUsers, setSalesUsers] = useState<User[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isPriceListModalOpen, setIsPriceListModalOpen] = useState(false);
   const [editingList, setEditingList] = useState<PriceList | null>(null);
-  const [assigningUser, setAssigningUser] = useState<User | null>(null);
+  const [isCreateUserOpen, setIsCreateUserOpen] = useState(false);
+  const [managingUser, setManagingUser] = useState<User | null>(null);
+  const [confirmingDisable, setConfirmingDisable] = useState<User | null>(null);
+  const [isSubmittingActive, setIsSubmittingActive] = useState(false);
 
   const load = useCallback(async () => {
     if (!token) return;
     setError(null);
     try {
-      const [{ priceLists: lists }, { users }] = await Promise.all([
+      const [{ priceLists: lists }, { users: allUsers }] = await Promise.all([
         listPriceLists(token),
-        listUsers(token, 'sales'),
+        listUsers(token),
       ]);
       setPriceLists(lists);
-      setSalesUsers(users);
+      setUsers(allUsers);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load data');
     } finally {
@@ -43,36 +49,56 @@ export function PricesScreen() {
 
   const priceListName = (id?: number) => priceLists.find((p) => p.id === id)?.name ?? 'Unassigned';
 
-  const openCreate = () => {
+  const openCreateList = () => {
     setEditingList(null);
-    setIsModalOpen(true);
+    setIsPriceListModalOpen(true);
   };
 
-  const openEdit = async (list: PriceList) => {
+  const openEditList = async (list: PriceList) => {
     if (!token) return;
     try {
       const { priceList } = await getPriceList(token, list.id);
       setEditingList(priceList);
-      setIsModalOpen(true);
+      setIsPriceListModalOpen(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load price list');
     }
   };
 
-  const handleSaved = () => {
-    setIsModalOpen(false);
+  const handleListSaved = () => {
+    setIsPriceListModalOpen(false);
     setEditingList(null);
     load();
   };
 
-  const handleAssign = async (priceListId: number | null) => {
-    if (!token || !assigningUser) return;
+  const handleUserCreated = () => {
+    setIsCreateUserOpen(false);
+    load();
+  };
+
+  const handleAssignPriceList = async (priceListId: number | null) => {
+    if (!token || !managingUser) return;
     try {
-      await assignPriceList(token, assigningUser.id, priceListId);
-      setAssigningUser(null);
+      await assignPriceList(token, managingUser.id, priceListId);
+      setManagingUser(null);
       load();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to assign price list');
+    }
+  };
+
+  const handleConfirmActiveChange = async () => {
+    if (!token || !confirmingDisable) return;
+    setIsSubmittingActive(true);
+    try {
+      await setUserActive(token, confirmingDisable.id, !confirmingDisable.active);
+      setConfirmingDisable(null);
+      setManagingUser(null);
+      load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update user');
+    } finally {
+      setIsSubmittingActive(false);
     }
   };
 
@@ -104,7 +130,7 @@ export function PricesScreen() {
             </View>
 
             {priceLists.map((list) => (
-              <Pressable key={list.id} style={styles.card} onPress={() => openEdit(list)}>
+              <Pressable key={list.id} style={styles.card} onPress={() => openEditList(list)}>
                 <View style={styles.cardIcon}>
                   <Ionicons name="pricetag-outline" size={18} color={colors.navy} />
                 </View>
@@ -116,73 +142,122 @@ export function PricesScreen() {
               </Pressable>
             ))}
 
-            <Pressable style={styles.addButton} onPress={openCreate}>
+            <Pressable style={styles.addButton} onPress={openCreateList}>
               <Ionicons name="add" size={18} color={colors.navy} />
               <Text style={styles.addButtonText}>New Price List</Text>
             </Pressable>
 
             <View style={styles.sectionHeaderRow}>
-              <Text style={styles.sectionTitle}>Sales Team</Text>
-              <Text style={styles.sectionCount}>{salesUsers.length}</Text>
+              <Text style={styles.sectionTitle}>Team</Text>
+              <Text style={styles.sectionCount}>{users.length}</Text>
             </View>
 
-            {salesUsers.map((salesUser) => (
-              <Pressable key={salesUser.id} style={styles.card} onPress={() => setAssigningUser(salesUser)}>
-                <View style={styles.cardIcon}>
-                  <Ionicons name="person-outline" size={18} color={colors.navy} />
+            {users.map((teamUser) => (
+              <Pressable key={teamUser.id} style={styles.card} onPress={() => setManagingUser(teamUser)}>
+                <View style={[styles.cardIcon, !teamUser.active && styles.cardIconDisabled]}>
+                  <Ionicons name="person-outline" size={18} color={teamUser.active ? colors.navy : colors.gray} />
                 </View>
                 <View style={styles.cardBody}>
-                  <Text style={styles.cardTitle}>{displayName(salesUser.email)}</Text>
-                  <Text style={styles.cardSubtitle}>{priceListName(salesUser.priceListId)}</Text>
+                  <View style={styles.cardTitleRow}>
+                    <Text style={styles.cardTitle}>{displayName(teamUser.email)}</Text>
+                    {!teamUser.active && (
+                      <View style={styles.disabledPill}>
+                        <Text style={styles.disabledPillText}>Disabled</Text>
+                      </View>
+                    )}
+                  </View>
+                  <Text style={styles.cardSubtitle}>
+                    {roleLabel(teamUser.role)}
+                    {teamUser.role === 'sales' ? ` · ${priceListName(teamUser.priceListId)}` : ''}
+                  </Text>
                 </View>
                 <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
               </Pressable>
             ))}
 
-            {salesUsers.length === 0 && <Text style={styles.emptyText}>No sales reps yet.</Text>}
+            {users.length === 0 && <Text style={styles.emptyText}>No users yet.</Text>}
+
+            <Pressable style={styles.addButton} onPress={() => setIsCreateUserOpen(true)}>
+              <Ionicons name="add" size={18} color={colors.navy} />
+              <Text style={styles.addButtonText}>New User</Text>
+            </Pressable>
           </>
         )}
       </ScrollView>
 
       <PriceListModal
-        visible={isModalOpen}
+        visible={isPriceListModalOpen}
         onClose={() => {
-          setIsModalOpen(false);
+          setIsPriceListModalOpen(false);
           setEditingList(null);
         }}
-        onSaved={handleSaved}
+        onSaved={handleListSaved}
         editing={editingList}
       />
 
-      {assigningUser && (
+      <CreateUserModal
+        visible={isCreateUserOpen}
+        onClose={() => setIsCreateUserOpen(false)}
+        onCreated={handleUserCreated}
+      />
+
+      {managingUser && (
         <View style={styles.overlay}>
-          <Pressable style={StyleSheet.absoluteFill} onPress={() => setAssigningUser(null)} />
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setManagingUser(null)} />
           <View style={styles.assignSheet}>
             <View style={styles.dragHandle} />
-            <Text style={styles.title}>Assign price list</Text>
-            <Text style={styles.subtitle}>{displayName(assigningUser.email)}</Text>
+            <Text style={styles.title}>{displayName(managingUser.email)}</Text>
+            <Text style={styles.subtitle}>{roleLabel(managingUser.role)}</Text>
 
-            <Pressable
-              style={styles.assignRow}
-              onPress={() => handleAssign(null)}
-            >
-              <Text style={styles.assignRowText}>Unassigned</Text>
-              {!assigningUser.priceListId && <Ionicons name="checkmark" size={18} color={colors.amber} />}
-            </Pressable>
+            {managingUser.role === 'sales' && (
+              <>
+                <Text style={styles.sheetSectionLabel}>PRICE LIST</Text>
+                <Pressable style={styles.assignRow} onPress={() => handleAssignPriceList(null)}>
+                  <Text style={styles.assignRowText}>Unassigned</Text>
+                  {!managingUser.priceListId && <Ionicons name="checkmark" size={18} color={colors.amber} />}
+                </Pressable>
 
-            {priceLists.map((list) => (
+                {priceLists.map((list) => (
+                  <Pressable key={list.id} style={styles.assignRow} onPress={() => handleAssignPriceList(list.id)}>
+                    <Text style={styles.assignRowText}>{list.name}</Text>
+                    {managingUser.priceListId === list.id && <Ionicons name="checkmark" size={18} color={colors.amber} />}
+                  </Pressable>
+                ))}
+              </>
+            )}
+
+            {managingUser.id === currentUser?.id ? (
+              <Text style={styles.selfNote}>You can't disable your own account.</Text>
+            ) : (
               <Pressable
-                key={list.id}
-                style={styles.assignRow}
-                onPress={() => handleAssign(list.id)}
+                style={[styles.disableButton, managingUser.active ? styles.disableButtonDanger : styles.disableButtonEnable]}
+                onPress={() => setConfirmingDisable(managingUser)}
               >
-                <Text style={styles.assignRowText}>{list.name}</Text>
-                {assigningUser.priceListId === list.id && <Ionicons name="checkmark" size={18} color={colors.amber} />}
+                <Text style={[styles.disableButtonText, !managingUser.active && styles.enableButtonText]}>
+                  {managingUser.active ? 'Disable Account' : 'Enable Account'}
+                </Text>
               </Pressable>
-            ))}
+            )}
           </View>
         </View>
       )}
+
+      <StatusActionModal
+        visible={!!confirmingDisable}
+        title={confirmingDisable?.active ? 'Disable account?' : 'Enable account?'}
+        message={
+          confirmingDisable
+            ? confirmingDisable.active
+              ? `${displayName(confirmingDisable.email)} won't be able to log in, and any active session ends immediately.`
+              : `${displayName(confirmingDisable.email)} will be able to log in again.`
+            : ''
+        }
+        confirmLabel={confirmingDisable?.active ? 'Disable' : 'Enable'}
+        danger={confirmingDisable?.active}
+        isSubmitting={isSubmittingActive}
+        onCancel={() => setConfirmingDisable(null)}
+        onConfirm={handleConfirmActiveChange}
+      />
     </View>
   );
 }
@@ -242,9 +317,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  cardIconDisabled: { backgroundColor: colors.grayMuted },
   cardBody: { flex: 1 },
+  cardTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   cardTitle: { fontSize: 15, fontWeight: '700', color: colors.text },
   cardSubtitle: { fontSize: 13, color: colors.textMuted, marginTop: 2 },
+  disabledPill: { backgroundColor: colors.redMuted, borderRadius: 20, paddingHorizontal: 8, paddingVertical: 2 },
+  disabledPillText: { fontSize: 10, fontWeight: '700', color: colors.red },
   addButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -285,6 +364,7 @@ const styles = StyleSheet.create({
   },
   title: { fontSize: 18, fontWeight: '700', color: colors.text },
   subtitle: { fontSize: 13, color: colors.textMuted, marginTop: 2, marginBottom: 16 },
+  sheetSectionLabel: { fontSize: 11, fontWeight: '700', color: colors.textMuted, letterSpacing: 0.5, marginBottom: 4 },
   assignRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -294,4 +374,16 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.border,
   },
   assignRowText: { fontSize: 15, color: colors.text },
+  selfNote: { fontSize: 12, color: colors.textMuted, marginTop: 16, textAlign: 'center' },
+  disableButton: {
+    marginTop: 20,
+    borderRadius: radius.lg,
+    paddingVertical: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  disableButtonDanger: { backgroundColor: colors.redMuted },
+  disableButtonEnable: { backgroundColor: colors.greenMuted },
+  disableButtonText: { color: colors.red, fontWeight: '700', fontSize: 15 },
+  enableButtonText: { color: colors.green },
 });

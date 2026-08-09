@@ -4,6 +4,7 @@ export type User = {
   id: number;
   email: string;
   role: string;
+  active: boolean;
   priceListId?: number;
   createdAt: string;
   updatedAt: string;
@@ -39,13 +40,6 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   }
 
   return body as T;
-}
-
-export function signup(email: string, password: string, role: string): Promise<AuthResponse> {
-  return request<AuthResponse>('/auth/signup', {
-    method: 'POST',
-    body: JSON.stringify({ email, password, role }),
-  });
 }
 
 export function login(email: string, password: string): Promise<AuthResponse> {
@@ -373,6 +367,29 @@ export function listUsers(token: string, role?: string): Promise<{ users: User[]
   const query = role ? `?role=${encodeURIComponent(role)}` : '';
   return request<{ users: User[] }>(`/users${query}`, {
     headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export type CreateUserInput = {
+  email: string;
+  password: string;
+  role: string;
+};
+
+// There's no public signup — a manager provisions every account directly.
+export function createUser(token: string, input: CreateUserInput): Promise<{ user: User }> {
+  return request<{ user: User }>('/users', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(input),
+  });
+}
+
+export function setUserActive(token: string, userId: number, active: boolean): Promise<{ user: User }> {
+  return request<{ user: User }>(`/users/${userId}/active`, {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ active }),
   });
 }
 

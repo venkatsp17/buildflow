@@ -1,4 +1,3 @@
-import { Link } from 'expo-router';
 import { useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
@@ -58,10 +57,6 @@ export default function Login() {
         >
           {isSubmitting ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.submitButtonText}>Sign In</Text>}
         </Pressable>
-
-        <Link href="/signup" style={styles.link}>
-          Need an account? Sign up
-        </Link>
       </View>
     </ScrollView>
   );
@@ -113,5 +108,4 @@ const styles = StyleSheet.create({
   },
   submitButtonDisabled: { opacity: 0.5 },
   submitButtonText: { color: '#FFFFFF', fontSize: 16, fontWeight: '600' },
-  link: { marginTop: 18, textAlign: 'center', color: colors.navy },
 });

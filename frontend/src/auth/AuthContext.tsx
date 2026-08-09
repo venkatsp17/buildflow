@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 
-import { login as apiLogin, me as apiMe, signup as apiSignup, setUnauthorizedHandler, type User } from '@/api/client';
+import { login as apiLogin, me as apiMe, setUnauthorizedHandler, type User } from '@/api/client';
 import { clearToken, getToken, setToken as persistToken } from '@/auth/tokenStorage';
 
 type AuthContextValue = {
@@ -9,7 +9,6 @@ type AuthContextValue = {
   isLoading: boolean;
   sessionExpired: boolean;
   login: (email: string, password: string) => Promise<void>;
-  signup: (email: string, password: string, role: string) => Promise<void>;
   logout: () => Promise<void>;
 };
 
@@ -63,16 +62,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setSessionExpired(false);
   };
 
-  const signup = async (email: string, password: string, role: string) => {
-    const { token: newToken, user: newUser } = await apiSignup(email, password, role);
-    await persistToken(newToken);
-    setToken(newToken);
-    setUser(newUser);
-    setSessionExpired(false);
-  };
-
   const value = useMemo(
-    () => ({ token, user, isLoading, sessionExpired, login, signup, logout }),
+    () => ({ token, user, isLoading, sessionExpired, login, logout }),
     [token, user, isLoading, sessionExpired, logout],
   );
 
