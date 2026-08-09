@@ -42,8 +42,17 @@ func RequireAuth(db *gorm.DB, jwtSecret string) gin.HandlerFunc {
 		}
 
 		var user models.User
-		if err := db.Select("active").First(&user, claims.UserID).Error; err != nil || !user.Active {
+		if err := db.Select("active", "must_reset_password").First(&user, claims.UserID).Error; err != nil || !user.Active {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "account disabled"})
+			return
+		}
+
+		// Enforced here (not just in the frontend's routing) so a forced
+		// password reset actually blocks the API, not just the UI. /auth/me
+		// and /auth/reset-password stay reachable — the app needs the first
+		// to know who's logged in and the second to actually clear the flag.
+		if user.MustResetPassword && c.FullPath() != "/auth/me" && c.FullPath() != "/auth/reset-password" {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "password reset required", "code": "password_reset_required"})
 			return
 		}
 

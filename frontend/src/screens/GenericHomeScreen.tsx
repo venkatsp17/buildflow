@@ -11,7 +11,7 @@ export function GenericHomeScreen() {
     <View style={styles.screen}>
       <View style={styles.card}>
         <Text style={styles.title}>You're logged in</Text>
-        <Text style={styles.email}>{user ? user.email : 'Loading user...'}</Text>
+        <Text style={styles.email}>{user ? user.name : 'Loading user...'}</Text>
         {user && (
           <View style={styles.roleBadge}>
             <Text style={styles.roleBadgeText}>{roleLabel(user.role)}</Text>

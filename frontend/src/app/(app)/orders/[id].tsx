@@ -8,7 +8,7 @@ import { useAuth } from '@/auth/AuthContext';
 import { OrderProgressStepper } from '@/components/OrderProgressStepper';
 import { StatusActionModal } from '@/components/StatusActionModal';
 import { colors, radius, statusStyle, urgencyStyle } from '@/constants/theme';
-import { displayName, formatMoney } from '@/utils/format';
+import { formatMoney } from '@/utils/format';
 
 function formatDate(dueDate: string): string {
   return dueDate.slice(0, 10);
@@ -249,7 +249,7 @@ export default function OrderDetail() {
         <DetailRow
           icon="person-outline"
           label="SALESPERSON"
-          value={order.createdBy ? displayName(order.createdBy.email) : '—'}
+          value={order.createdBy ? order.createdBy.name : '—'}
           last
         />
       </View>

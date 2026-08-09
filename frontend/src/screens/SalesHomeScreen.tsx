@@ -11,7 +11,7 @@ import { colors, radius } from '@/constants/theme';
 import { useOrders } from '@/hooks/useOrders';
 import { usePriorityOrders } from '@/hooks/usePriorityOrders';
 import { useNotifications } from '@/notifications/NotificationContext';
-import { displayName, formatMoney } from '@/utils/format';
+import { formatMoney } from '@/utils/format';
 
 function getGreeting(): string {
   const hour = new Date().getHours();
@@ -93,7 +93,7 @@ export function SalesHomeScreen() {
         </View>
 
         <Text style={styles.greeting}>{getGreeting()}</Text>
-        <Text style={styles.userName}>{user ? displayName(user.email) : ''}</Text>
+        <Text style={styles.userName}>{user ? user.name : ''}</Text>
 
         <View style={styles.valueCard}>
           <View>

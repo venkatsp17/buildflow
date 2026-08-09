@@ -13,34 +13,38 @@ type Props = {
   onCreated: (user: User) => void;
 };
 
+type CreatedResult = { user: User; temporaryPassword: string };
+
 export function CreateUserModal({ visible, onClose, onCreated }: Props) {
   const { token } = useAuth();
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [name, setName] = useState('');
+  const [username, setUsername] = useState('');
   const [role, setRole] = useState<RoleValue>('sales');
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [created, setCreated] = useState<CreatedResult | null>(null);
 
   useEffect(() => {
     if (visible) {
-      setEmail('');
-      setPassword('');
+      setName('');
+      setUsername('');
       setRole('sales');
       setError(null);
+      setCreated(null);
     }
   }, [visible]);
 
   if (!visible) return null;
 
-  const canSubmit = !!email && password.length >= 8 && !isSubmitting;
+  const canSubmit = !!name.trim() && !!username.trim() && !isSubmitting;
 
   const handleSubmit = async () => {
     if (!token) return;
     setIsSubmitting(true);
     setError(null);
     try {
-      const { user } = await createUser(token, { email: email.trim(), password, role });
-      onCreated(user);
+      const result = await createUser(token, { name: name.trim(), username: username.trim(), role });
+      setCreated(result);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create user');
     } finally {
@@ -48,71 +52,105 @@ export function CreateUserModal({ visible, onClose, onCreated }: Props) {
     }
   };
 
+  const handleDone = () => {
+    if (created) onCreated(created.user);
+  };
+
   return (
     <View style={styles.overlay}>
-      <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+      <Pressable style={StyleSheet.absoluteFill} onPress={created ? handleDone : onClose} />
 
       <View style={styles.sheet}>
         <View style={styles.dragHandle} />
 
-        <View style={styles.headerRow}>
-          <Text style={styles.title}>New User</Text>
-          <Pressable style={styles.closeButton} onPress={onClose}>
-            <Ionicons name="close" size={20} color={colors.text} />
-          </Pressable>
-        </View>
+        {created ? (
+          <>
+            <View style={styles.headerRow}>
+              <Text style={styles.title}>User Created</Text>
+            </View>
+            <ScrollView contentContainerStyle={styles.content}>
+              <View style={styles.successIcon}>
+                <Ionicons name="checkmark-circle" size={40} color={colors.green} />
+              </View>
+              <Text style={styles.successNote}>
+                Share this temporary password with {created.user.name} — it won't be shown again. They'll be asked to
+                set their own password the first time they log in.
+              </Text>
 
-        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-          <Text style={styles.sectionLabel}>ROLE</Text>
-          {ROLE_OPTIONS.map((option) => {
-            const selected = option.value === role;
-            return (
-              <Pressable
-                key={option.value}
-                style={[styles.roleRow, selected && styles.roleRowSelected]}
-                onPress={() => setRole(option.value)}
-              >
-                <View style={[styles.roleIcon, selected && styles.roleIconSelected]}>
-                  <Ionicons name={option.icon} size={18} color={selected ? colors.navy : colors.textMuted} />
-                </View>
-                <View style={styles.roleTextGroup}>
-                  <Text style={styles.roleLabel}>{option.label}</Text>
-                  <Text style={styles.roleDescription}>{option.description}</Text>
-                </View>
-                {selected && <Ionicons name="checkmark-circle" size={20} color={colors.amber} />}
+              <Text style={styles.fieldLabel}>USERNAME</Text>
+              <View style={styles.credentialBox}>
+                <Text style={styles.credentialText}>{created.user.username}</Text>
+              </View>
+
+              <Text style={styles.fieldLabel}>TEMPORARY PASSWORD</Text>
+              <View style={styles.credentialBox}>
+                <Text style={styles.credentialText} selectable>
+                  {created.temporaryPassword}
+                </Text>
+              </View>
+
+              <Pressable style={styles.submitButton} onPress={handleDone}>
+                <Text style={styles.submitButtonText}>Done</Text>
               </Pressable>
-            );
-          })}
+            </ScrollView>
+          </>
+        ) : (
+          <>
+            <View style={styles.headerRow}>
+              <Text style={styles.title}>New User</Text>
+              <Pressable style={styles.closeButton} onPress={onClose}>
+                <Ionicons name="close" size={20} color={colors.text} />
+              </Pressable>
+            </View>
 
-          <Text style={styles.fieldLabel}>EMAIL</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="you@example.com"
-            autoCapitalize="none"
-            keyboardType="email-address"
-            value={email}
-            onChangeText={setEmail}
-          />
+            <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+              <Text style={styles.sectionLabel}>ROLE</Text>
+              {ROLE_OPTIONS.map((option) => {
+                const selected = option.value === role;
+                return (
+                  <Pressable
+                    key={option.value}
+                    style={[styles.roleRow, selected && styles.roleRowSelected]}
+                    onPress={() => setRole(option.value)}
+                  >
+                    <View style={[styles.roleIcon, selected && styles.roleIconSelected]}>
+                      <Ionicons name={option.icon} size={18} color={selected ? colors.navy : colors.textMuted} />
+                    </View>
+                    <View style={styles.roleTextGroup}>
+                      <Text style={styles.roleLabel}>{option.label}</Text>
+                      <Text style={styles.roleDescription}>{option.description}</Text>
+                    </View>
+                    {selected && <Ionicons name="checkmark-circle" size={20} color={colors.amber} />}
+                  </Pressable>
+                );
+              })}
 
-          <Text style={styles.fieldLabel}>PASSWORD</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Min 8 characters"
-            secureTextEntry
-            value={password}
-            onChangeText={setPassword}
-          />
+              <Text style={styles.fieldLabel}>NAME</Text>
+              <TextInput style={styles.input} placeholder="Full name" value={name} onChangeText={setName} />
 
-          {error && <Text style={styles.error}>{error}</Text>}
+              <Text style={styles.fieldLabel}>USERNAME</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="username"
+                autoCapitalize="none"
+                value={username}
+                onChangeText={setUsername}
+              />
 
-          <Pressable
-            style={[styles.submitButton, !canSubmit && styles.submitButtonDisabled]}
-            onPress={handleSubmit}
-            disabled={!canSubmit}
-          >
-            {isSubmitting ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.submitButtonText}>Create User</Text>}
-          </Pressable>
-        </ScrollView>
+              <Text style={styles.hint}>A password is generated automatically — you'll get it after creating the user.</Text>
+
+              {error && <Text style={styles.error}>{error}</Text>}
+
+              <Pressable
+                style={[styles.submitButton, !canSubmit && styles.submitButtonDisabled]}
+                onPress={handleSubmit}
+                disabled={!canSubmit}
+              >
+                {isSubmitting ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.submitButtonText}>Create User</Text>}
+              </Pressable>
+            </ScrollView>
+          </>
+        )}
       </View>
     </View>
   );
@@ -191,6 +229,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: colors.text,
   },
+  hint: { fontSize: 12, color: colors.textMuted, marginTop: 10 },
   error: { color: colors.error, marginTop: 12 },
   submitButton: {
     marginTop: 20,
@@ -202,4 +241,15 @@ const styles = StyleSheet.create({
   },
   submitButtonDisabled: { opacity: 0.4 },
   submitButtonText: { color: '#FFFFFF', fontWeight: '700', fontSize: 15 },
+  successIcon: { alignItems: 'center', marginBottom: 8 },
+  successNote: { fontSize: 13, color: colors.textMuted, textAlign: 'center', lineHeight: 19 },
+  credentialBox: {
+    backgroundColor: colors.background,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+  },
+  credentialText: { fontSize: 16, fontWeight: '700', color: colors.text, letterSpacing: 0.5 },
 });

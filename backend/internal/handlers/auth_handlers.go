@@ -22,7 +22,7 @@ func NewAuthHandler(db *gorm.DB, jwtSecret string) *AuthHandler {
 }
 
 type loginRequest struct {
-	Email    string `json:"email" binding:"required,email"`
+	Username string `json:"username" binding:"required"`
 	Password string `json:"password" binding:"required,min=8"`
 }
 
@@ -36,9 +36,9 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	}
 
 	var user models.User
-	if err := h.DB.Where("email = ?", req.Email).First(&user).Error; err != nil {
+	if err := h.DB.Where("username = ?", req.Username).First(&user).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid email or password"})
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid username or password"})
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to look up user"})
@@ -46,7 +46,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	}
 
 	if !auth.CheckPassword(user.PasswordHash, req.Password) {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid email or password"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid username or password"})
 		return
 	}
 
@@ -74,4 +74,37 @@ func (h *AuthHandler) Me(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"user": user})
+}
+
+type resetPasswordRequest struct {
+	NewPassword string `json:"newPassword" binding:"required,min=8"`
+}
+
+// ResetPassword lets the authenticated user set their own password —
+// required on first login after a manager creates an account with an
+// auto-generated one (see UserHandler.CreateUser and MustResetPassword).
+func (h *AuthHandler) ResetPassword(c *gin.Context) {
+	userID := c.MustGet(middleware.UserIDKey).(uint)
+
+	var req resetPasswordRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	passwordHash, err := auth.HashPassword(req.NewPassword)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to process password"})
+		return
+	}
+
+	if err := h.DB.Model(&models.User{}).Where("id = ?", userID).Updates(map[string]any{
+		"password_hash":       passwordHash,
+		"must_reset_password": false,
+	}).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to reset password"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "password updated"})
 }

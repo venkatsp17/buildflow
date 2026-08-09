@@ -9,7 +9,6 @@ import { PriceListModal } from '@/components/PriceListModal';
 import { StatusActionModal } from '@/components/StatusActionModal';
 import { colors, radius } from '@/constants/theme';
 import { roleLabel } from '@/constants/roles';
-import { displayName } from '@/utils/format';
 
 export function PricesScreen() {
   const { logout, token, user: currentUser } = useAuth();
@@ -159,7 +158,7 @@ export function PricesScreen() {
                 </View>
                 <View style={styles.cardBody}>
                   <View style={styles.cardTitleRow}>
-                    <Text style={styles.cardTitle}>{displayName(teamUser.email)}</Text>
+                    <Text style={styles.cardTitle}>{teamUser.name}</Text>
                     {!teamUser.active && (
                       <View style={styles.disabledPill}>
                         <Text style={styles.disabledPillText}>Disabled</Text>
@@ -167,7 +166,7 @@ export function PricesScreen() {
                     )}
                   </View>
                   <Text style={styles.cardSubtitle}>
-                    {roleLabel(teamUser.role)}
+                    @{teamUser.username} · {roleLabel(teamUser.role)}
                     {teamUser.role === 'sales' ? ` · ${priceListName(teamUser.priceListId)}` : ''}
                   </Text>
                 </View>
@@ -206,8 +205,10 @@ export function PricesScreen() {
           <Pressable style={StyleSheet.absoluteFill} onPress={() => setManagingUser(null)} />
           <View style={styles.assignSheet}>
             <View style={styles.dragHandle} />
-            <Text style={styles.title}>{displayName(managingUser.email)}</Text>
-            <Text style={styles.subtitle}>{roleLabel(managingUser.role)}</Text>
+            <Text style={styles.title}>{managingUser.name}</Text>
+            <Text style={styles.subtitle}>
+              @{managingUser.username} · {roleLabel(managingUser.role)}
+            </Text>
 
             {managingUser.role === 'sales' && (
               <>
@@ -248,8 +249,8 @@ export function PricesScreen() {
         message={
           confirmingDisable
             ? confirmingDisable.active
-              ? `${displayName(confirmingDisable.email)} won't be able to log in, and any active session ends immediately.`
-              : `${displayName(confirmingDisable.email)} will be able to log in again.`
+              ? `${confirmingDisable.name} won't be able to log in, and any active session ends immediately.`
+              : `${confirmingDisable.name} will be able to log in again.`
             : ''
         }
         confirmLabel={confirmingDisable?.active ? 'Disable' : 'Enable'}

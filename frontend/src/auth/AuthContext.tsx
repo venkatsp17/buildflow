@@ -8,8 +8,11 @@ type AuthContextValue = {
   user: User | null;
   isLoading: boolean;
   sessionExpired: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  login: (username: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
+  // Re-fetches /auth/me — used after resetting a forced password so the
+  // in-memory user reflects mustResetPassword: false without a full reload.
+  refreshUser: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -54,17 +57,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
   }, [logout]);
 
-  const login = async (email: string, password: string) => {
-    const { token: newToken, user: newUser } = await apiLogin(email, password);
+  const login = async (username: string, password: string) => {
+    const { token: newToken, user: newUser } = await apiLogin(username, password);
     await persistToken(newToken);
     setToken(newToken);
     setUser(newUser);
     setSessionExpired(false);
   };
 
+  const refreshUser = useCallback(async () => {
+    if (!token) return;
+    const { user: fetchedUser } = await apiMe(token);
+    setUser(fetchedUser);
+  }, [token]);
+
   const value = useMemo(
-    () => ({ token, user, isLoading, sessionExpired, login, logout }),
-    [token, user, isLoading, sessionExpired, logout],
+    () => ({ token, user, isLoading, sessionExpired, login, logout, refreshUser }),
+    [token, user, isLoading, sessionExpired, logout, refreshUser],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

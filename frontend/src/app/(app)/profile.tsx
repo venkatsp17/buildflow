@@ -13,7 +13,8 @@ export default function Profile() {
       <View style={styles.avatar}>
         <Ionicons name="person" size={28} color={colors.navy} />
       </View>
-      <Text style={styles.email}>{user?.email}</Text>
+      <Text style={styles.email}>{user?.name}</Text>
+      {user && <Text style={styles.username}>@{user.username}</Text>}
       {user && (
         <View style={styles.roleBadge}>
           <Text style={styles.roleBadgeText}>{roleLabel(user.role)}</Text>
@@ -40,6 +41,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   email: { fontSize: 17, fontWeight: '600', color: colors.text },
+  username: { fontSize: 13, color: colors.textMuted, marginTop: -6 },
   roleBadge: { backgroundColor: colors.amberMuted, borderRadius: radius.sm, paddingVertical: 4, paddingHorizontal: 12 },
   roleBadgeText: { color: colors.navy, fontWeight: '600', fontSize: 13 },
   logoutButton: {

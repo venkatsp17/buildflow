@@ -7,7 +7,7 @@ import { useAuth } from '@/auth/AuthContext';
 
 export default function Login() {
   const { login, sessionExpired } = useAuth();
-  const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -16,7 +16,7 @@ export default function Login() {
     setError(null);
     setIsSubmitting(true);
     try {
-      await login(email, password);
+      await login(username, password);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to log in');
     } finally {
@@ -24,7 +24,7 @@ export default function Login() {
     }
   };
 
-  const canSubmit = !!email && !!password && !isSubmitting;
+  const canSubmit = !!username && !!password && !isSubmitting;
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
@@ -35,14 +35,13 @@ export default function Login() {
           <Text style={styles.sessionExpired}>Your session expired. Please log in again.</Text>
         )}
 
-        <Text style={styles.fieldLabel}>EMAIL</Text>
+        <Text style={styles.fieldLabel}>USERNAME</Text>
         <TextInput
           style={styles.input}
-          placeholder="you@example.com"
+          placeholder="username"
           autoCapitalize="none"
-          keyboardType="email-address"
-          value={email}
-          onChangeText={setEmail}
+          value={username}
+          onChangeText={setUsername}
         />
 
         <Text style={styles.fieldLabel}>PASSWORD</Text>

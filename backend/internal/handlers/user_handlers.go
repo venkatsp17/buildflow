@@ -22,7 +22,7 @@ func NewUserHandler(db *gorm.DB) *UserHandler {
 // List returns users, optionally filtered by ?role=. Manager-only — used to
 // see the sales team when assigning price lists.
 func (h *UserHandler) List(c *gin.Context) {
-	query := h.DB.Model(&models.User{}).Order("email asc")
+	query := h.DB.Model(&models.User{}).Order("name asc")
 	if role := c.Query("role"); role != "" {
 		query = query.Where("role = ?", role)
 	}
@@ -37,14 +37,17 @@ func (h *UserHandler) List(c *gin.Context) {
 }
 
 type createUserRequest struct {
-	Email    string `json:"email" binding:"required,email"`
-	Password string `json:"password" binding:"required,min=8"`
+	Name     string `json:"name" binding:"required"`
+	Username string `json:"username" binding:"required,min=3"`
 	Role     string `json:"role" binding:"required,oneof=sales manufacturing manager"`
 }
 
-// CreateUser provisions a new account. Manager-only — there's no public
-// signup, so this is the only way an account gets created after the initial
-// seed data.
+// CreateUser provisions a new account with a server-generated password —
+// there's no public signup, and managers don't choose a password for the
+// people they create. The plaintext password is returned exactly once in
+// this response (never stored, never retrievable again) for the manager to
+// hand off; the account itself is flagged MustResetPassword so it can't be
+// used until the new owner picks their own password on first login.
 func (h *UserHandler) CreateUser(c *gin.Context) {
 	var req createUserRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -52,19 +55,32 @@ func (h *UserHandler) CreateUser(c *gin.Context) {
 		return
 	}
 
-	passwordHash, err := auth.HashPassword(req.Password)
+	temporaryPassword, err := auth.GenerateRandomPassword()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate password"})
+		return
+	}
+
+	passwordHash, err := auth.HashPassword(temporaryPassword)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to process password"})
 		return
 	}
 
-	user := models.User{Email: req.Email, PasswordHash: passwordHash, Role: models.Role(req.Role), Active: true}
+	user := models.User{
+		Name:              req.Name,
+		Username:          req.Username,
+		PasswordHash:      passwordHash,
+		Role:              models.Role(req.Role),
+		Active:            true,
+		MustResetPassword: true,
+	}
 	if err := h.DB.Create(&user).Error; err != nil {
-		c.JSON(http.StatusConflict, gin.H{"error": "email already registered"})
+		c.JSON(http.StatusConflict, gin.H{"error": "username already taken"})
 		return
 	}
 
-	c.JSON(http.StatusCreated, gin.H{"user": user})
+	c.JSON(http.StatusCreated, gin.H{"user": user, "temporaryPassword": temporaryPassword})
 }
 
 type setUserActiveRequest struct {

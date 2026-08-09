@@ -15,6 +15,14 @@ func Connect(databaseURL string) (*gorm.DB, error) {
 		return nil, err
 	}
 
+	// Must run before AutoMigrate: it renames the old `email` login column to
+	// `username` and backfills `name`/`must_reset_password` on any existing
+	// rows, so AutoMigrate's NOT NULL constraints (from the current User
+	// struct) have something valid to enforce rather than failing outright.
+	if err := migrateUserIdentifierColumns(db); err != nil {
+		return nil, err
+	}
+
 	if err := db.AutoMigrate(
 		&models.PriceList{},
 		&models.User{},
@@ -47,6 +55,52 @@ func Connect(databaseURL string) (*gorm.DB, error) {
 	}
 
 	return db, nil
+}
+
+// migrateUserIdentifierColumns handles the one-time move from email-based
+// login to username-based login. On a brand-new database the `users` table
+// doesn't exist yet, so there's nothing to migrate — AutoMigrate creates it
+// with the current (username/name) shape directly.
+func migrateUserIdentifierColumns(db *gorm.DB) error {
+	var usersTableExists bool
+	if err := db.Raw(`SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'users')`).Scan(&usersTableExists).Error; err != nil {
+		return err
+	}
+	if !usersTableExists {
+		return nil
+	}
+
+	var hasEmail, hasUsername bool
+	if err := db.Raw(`SELECT EXISTS (SELECT FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'email')`).Scan(&hasEmail).Error; err != nil {
+		return err
+	}
+	if err := db.Raw(`SELECT EXISTS (SELECT FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'username')`).Scan(&hasUsername).Error; err != nil {
+		return err
+	}
+	if hasEmail && !hasUsername {
+		if err := db.Exec(`ALTER TABLE users RENAME COLUMN email TO username`).Error; err != nil {
+			return err
+		}
+	}
+
+	if err := db.Exec(`ALTER TABLE users ADD COLUMN IF NOT EXISTS name TEXT`).Error; err != nil {
+		return err
+	}
+	// Existing accounts (created back when the only identifier was an email)
+	// get their username as a placeholder display name — a manager can't
+	// rename them today, but this beats a blank name.
+	if err := db.Exec(`UPDATE users SET name = username WHERE name IS NULL`).Error; err != nil {
+		return err
+	}
+	if err := db.Exec(`ALTER TABLE users ALTER COLUMN name SET NOT NULL`).Error; err != nil {
+		return err
+	}
+
+	if err := db.Exec(`ALTER TABLE users ADD COLUMN IF NOT EXISTS must_reset_password BOOLEAN NOT NULL DEFAULT false`).Error; err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // seedBaseData inserts a starter Customer/Product catalog the first time the

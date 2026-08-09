@@ -2,9 +2,11 @@ const BASE_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8080';
 
 export type User = {
   id: number;
-  email: string;
+  name: string;
+  username: string;
   role: string;
   active: boolean;
+  mustResetPassword: boolean;
   priceListId?: number;
   createdAt: string;
   updatedAt: string;
@@ -42,16 +44,24 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   return body as T;
 }
 
-export function login(email: string, password: string): Promise<AuthResponse> {
+export function login(username: string, password: string): Promise<AuthResponse> {
   return request<AuthResponse>('/auth/login', {
     method: 'POST',
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({ username, password }),
   });
 }
 
 export function me(token: string): Promise<{ user: User }> {
   return request<{ user: User }>('/auth/me', {
     headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export function resetPassword(token: string, newPassword: string): Promise<{ message: string }> {
+  return request<{ message: string }>('/auth/reset-password', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ newPassword }),
   });
 }
 
@@ -371,14 +381,18 @@ export function listUsers(token: string, role?: string): Promise<{ users: User[]
 }
 
 export type CreateUserInput = {
-  email: string;
-  password: string;
+  name: string;
+  username: string;
   role: string;
 };
 
-// There's no public signup — a manager provisions every account directly.
-export function createUser(token: string, input: CreateUserInput): Promise<{ user: User }> {
-  return request<{ user: User }>('/users', {
+// There's no public signup — a manager provisions every account directly,
+// with a server-generated password returned once so it can be handed off.
+export function createUser(
+  token: string,
+  input: CreateUserInput,
+): Promise<{ user: User; temporaryPassword: string }> {
+  return request<{ user: User; temporaryPassword: string }>('/users', {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}` },
     body: JSON.stringify(input),
