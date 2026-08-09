@@ -9,6 +9,8 @@ import { NewOrderModal } from '@/components/NewOrderModal';
 import { OrderCard } from '@/components/OrderCard';
 import { colors, radius } from '@/constants/theme';
 import { useOrders } from '@/hooks/useOrders';
+import { usePriorityOrders } from '@/hooks/usePriorityOrders';
+import { useNotifications } from '@/notifications/NotificationContext';
 import { displayName, formatMoney } from '@/utils/format';
 
 function getGreeting(): string {
@@ -21,15 +23,15 @@ function getGreeting(): string {
 export function SalesHomeScreen() {
   const { user, logout, token } = useAuth();
   const router = useRouter();
-  const { orders, summary, isLoading, error, reload } = useOrders();
+  const { orders, summary, error, reload } = useOrders();
+  const { priorityOrders, isLoading: isPriorityLoading, reload: reloadPriority } = usePriorityOrders();
+  const { unreadCount } = useNotifications();
   const [isDuplicating, setIsDuplicating] = useState(false);
   const [isNewOrderOpen, setIsNewOrderOpen] = useState(false);
 
-  const priorityOrders = orders.filter((order) => order.urgency === 'urgent' || order.urgency === 'high');
-
   const handleOrderCreated = async (order: Order) => {
     setIsNewOrderOpen(false);
-    await reload();
+    await Promise.all([reload(), reloadPriority()]);
     router.push(`/orders/${order.id}` as never);
   };
 
@@ -51,10 +53,9 @@ export function SalesHomeScreen() {
           description: item.description,
           quantity: item.quantity,
           unit: item.unit,
-          unitPrice: item.unitPrice,
         })),
       });
-      await reload();
+      await Promise.all([reload(), reloadPriority()]);
       Alert.alert(
         'Order duplicated',
         `${newOrder.ticketNumber} created for ${newOrder.clientName} (${newOrder.currency} ${formatMoney(newOrder.value)}), based on ${source.ticketNumber}.`,
@@ -77,8 +78,13 @@ export function SalesHomeScreen() {
             <Text style={styles.brandName}>BuildFlow</Text>
           </View>
           <View style={styles.headerActions}>
-            <Pressable style={styles.iconButton}>
+            <Pressable style={styles.iconButton} onPress={() => router.push('/alerts' as never)}>
               <Ionicons name="notifications-outline" size={20} color={colors.text} />
+              {unreadCount > 0 && (
+                <View style={styles.headerBadge}>
+                  <Text style={styles.headerBadgeText}>{unreadCount > 9 ? '9+' : unreadCount}</Text>
+                </View>
+              )}
             </Pressable>
             <Pressable style={styles.iconButton} onPress={logout}>
               <Ionicons name="log-out-outline" size={20} color={colors.text} />
@@ -134,9 +140,9 @@ export function SalesHomeScreen() {
           <Text style={styles.ordersCount}>{priorityOrders.length} orders</Text>
         </View>
 
-        {isLoading && <ActivityIndicator style={{ marginTop: 20 }} />}
+        {isPriorityLoading && <ActivityIndicator style={{ marginTop: 20 }} />}
         {error && <Text style={styles.error}>{error}</Text>}
-        {!isLoading && priorityOrders.length === 0 && (
+        {!isPriorityLoading && priorityOrders.length === 0 && (
           <Text style={styles.emptyText}>No urgent or high priority orders.</Text>
         )}
 
@@ -192,6 +198,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  headerBadge: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: colors.red,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 2,
+  },
+  headerBadgeText: { color: '#FFFFFF', fontSize: 9, fontWeight: '700' },
   greeting: { fontSize: 14, color: colors.textMuted, marginTop: 20 },
   userName: { fontSize: 22, fontWeight: '700', color: colors.text, marginTop: 2 },
   valueCard: {

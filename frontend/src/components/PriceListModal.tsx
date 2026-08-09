@@ -66,8 +66,11 @@ export function PriceListModal({ visible, onClose, onSaved, editing }: Props) {
     setError(null);
   }, [editing, visible]);
 
+  // Empty search text still hits the API — the backend returns its default
+  // alphabetical list in that case — so focusing the field shows a
+  // prepopulated list before the user types anything.
   useEffect(() => {
-    if (!token || activeProductIndex === null || !debouncedProductQuery.trim()) {
+    if (!token || activeProductIndex === null) {
       setProductResults([]);
       return;
     }
@@ -286,7 +289,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
   },
   input: { flex: 1, paddingVertical: 12, fontSize: 14, color: colors.text },
-  plainInput: { paddingHorizontal: 12 },
+  plainInput: {
+    paddingHorizontal: 12,
+    backgroundColor: colors.card,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
   priceInput: { marginTop: 8 },
   suggestionsBox: {
     backgroundColor: colors.card,

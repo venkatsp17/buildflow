@@ -6,21 +6,24 @@ import { colors } from '@/constants/theme';
 const STEPS = [
   { key: 'created', label: 'Created' },
   { key: 'pending', label: 'Pending' },
+  { key: 'approved', label: 'Approved' },
   { key: 'in_progress', label: 'In Progress' },
   { key: 'dispatched', label: 'Dispatch' },
-  { key: 'done', label: 'Done' },
+  { key: 'delivered', label: 'Delivered' },
 ] as const;
 
 function stepIndexForStatus(status: string): number {
   switch (status) {
     case 'pending':
       return 1;
-    case 'in_progress':
+    case 'approved':
       return 2;
-    case 'dispatched':
+    case 'in_progress':
       return 3;
-    case 'done':
+    case 'dispatched':
       return 4;
+    case 'delivered':
+      return 5;
     default:
       return 1;
   }
@@ -32,23 +35,36 @@ function StepIcon({ stepKey, color, size = 16 }: { stepKey: string; color: strin
       return <Text style={{ color, fontWeight: '700', fontSize: size }}>#</Text>;
     case 'pending':
       return <Ionicons name="time-outline" size={size} color={color} />;
+    case 'approved':
+      return <Ionicons name="checkmark-circle-outline" size={size} color={color} />;
     case 'in_progress':
       return <Ionicons name="play" size={size} color={color} />;
     case 'dispatched':
       return <Ionicons name="send-outline" size={size} color={color} />;
-    case 'done':
+    case 'delivered':
       return <Ionicons name="checkmark" size={size} color={color} />;
     default:
       return null;
   }
 }
 
-export function OrderProgressStepper({ status }: { status: string }) {
+export function OrderProgressStepper({ status, rejectionReason }: { status: string; rejectionReason?: string }) {
   if (status === 'cancelled') {
     return (
       <View style={styles.cancelledBanner}>
         <Ionicons name="close-circle" size={18} color={colors.red} />
         <Text style={styles.cancelledText}>This order was cancelled</Text>
+      </View>
+    );
+  }
+
+  if (status === 'rejected') {
+    return (
+      <View style={styles.cancelledBanner}>
+        <Ionicons name="close-circle" size={18} color={colors.red} />
+        <Text style={styles.cancelledText}>
+          This order was rejected{rejectionReason ? ` — ${rejectionReason}` : ''}
+        </Text>
       </View>
     );
   }
@@ -63,7 +79,7 @@ export function OrderProgressStepper({ status }: { status: string }) {
       <View style={styles.stepsRow}>
         {STEPS.map((step, index) => {
           const isFilled = index <= currentIndex;
-          const isCurrent = index === currentIndex && status !== 'done';
+          const isCurrent = index === currentIndex && status !== 'delivered';
           const color = isFilled ? colors.navy : colors.textMuted;
 
           return (

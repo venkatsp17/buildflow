@@ -3,9 +3,10 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
-import { createOrder, getOrder, type Order } from '@/api/client';
+import { createOrder, getOrder, updateOrderStatus, type Order } from '@/api/client';
 import { useAuth } from '@/auth/AuthContext';
 import { OrderProgressStepper } from '@/components/OrderProgressStepper';
+import { StatusActionModal } from '@/components/StatusActionModal';
 import { colors, radius, statusStyle, urgencyStyle } from '@/constants/theme';
 import { displayName, formatMoney } from '@/utils/format';
 
@@ -13,15 +14,50 @@ function formatDate(dueDate: string): string {
   return dueDate.slice(0, 10);
 }
 
+type StatusAction = {
+  status: string;
+  label: string;
+  danger?: boolean;
+  requireReason?: boolean;
+};
+
+// Only manufacturing/manager can move an order through fulfillment; sales
+// creates the order but doesn't advance its status. Mirrors the backend's
+// orderStatusTransitions — each step needs its own confirmation, so an
+// approved order can't jump straight to dispatched, for example.
+//
+// pending has no entry here deliberately: Approve/Reject is exclusively a
+// Production Queue action (see ManufacturingHomeScreen), not something the
+// order detail page exposes — otherwise browsing to a pending order from
+// the general Orders list would offer the same decision outside the queue
+// workflow.
+const NEXT_STATUSES: Record<string, StatusAction[]> = {
+  pending: [],
+  approved: [
+    { status: 'in_progress', label: 'Start Production' },
+    { status: 'cancelled', label: 'Cancel Order', danger: true },
+  ],
+  in_progress: [
+    { status: 'dispatched', label: 'Mark Dispatch Ready' },
+    { status: 'cancelled', label: 'Cancel Order', danger: true },
+  ],
+  dispatched: [{ status: 'delivered', label: 'Mark Delivered' }],
+  delivered: [],
+  rejected: [],
+  cancelled: [],
+};
+
 export default function OrderDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
-  const { token } = useAuth();
+  const { token, user } = useAuth();
 
   const [order, setOrder] = useState<Order | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isDuplicating, setIsDuplicating] = useState(false);
+  const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
+  const [pendingAction, setPendingAction] = useState<StatusAction | null>(null);
 
   const load = useCallback(async () => {
     if (!token || !id) return;
@@ -58,7 +94,6 @@ export default function OrderDetail() {
           description: item.description,
           quantity: item.quantity,
           unit: item.unit,
-          unitPrice: item.unitPrice,
         })),
       });
       Alert.alert(
@@ -70,6 +105,20 @@ export default function OrderDetail() {
       Alert.alert('Failed to duplicate order', err instanceof Error ? err.message : 'Unknown error');
     } finally {
       setIsDuplicating(false);
+    }
+  };
+
+  const handleStatusChange = async (reason?: string) => {
+    if (!token || !order || !pendingAction) return;
+    setIsUpdatingStatus(true);
+    try {
+      const { order: updated } = await updateOrderStatus(token, order.id, pendingAction.status, reason);
+      setOrder(updated);
+      setPendingAction(null);
+    } catch (err) {
+      Alert.alert('Failed to update status', err instanceof Error ? err.message : 'Unknown error');
+    } finally {
+      setIsUpdatingStatus(false);
     }
   };
 
@@ -94,8 +143,9 @@ export default function OrderDetail() {
   const totalUnits = order.items.reduce((sum, item) => sum + item.quantity, 0);
 
   return (
-    <ScrollView style={styles.screen} contentContainerStyle={{ paddingBottom: 40 }}>
-      <View style={styles.header}>
+    <View style={styles.screen}>
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 40 }}>
+        <View style={styles.header}>
         <Pressable style={styles.backRow} onPress={() => router.back()}>
           <Ionicons name="arrow-back" size={18} color={colors.amber} />
           <Text style={styles.backText}>Back</Text>
@@ -123,7 +173,7 @@ export default function OrderDetail() {
           <View style={styles.pill}>
             <Ionicons name="pricetag-outline" size={12} color={colors.navyMuted} />
             <Text style={styles.pillText}>
-              {order.currency} {formatMoney(order.value)} · {order.priceListName}
+              {order.currency} {formatMoney(order.value)}
             </Text>
           </View>
         </View>
@@ -136,8 +186,27 @@ export default function OrderDetail() {
 
       <View style={styles.card}>
         <Text style={styles.cardLabel}>PROGRESS</Text>
-        <OrderProgressStepper status={order.status} />
+        <OrderProgressStepper status={order.status} rejectionReason={order.rejectionReason} />
       </View>
+
+      {(user?.role === 'manufacturing' || user?.role === 'manager') && NEXT_STATUSES[order.status]?.length > 0 && (
+        <View style={styles.card}>
+          <Text style={styles.cardLabel}>UPDATE STATUS</Text>
+          <View style={styles.statusActionsRow}>
+            {NEXT_STATUSES[order.status].map((action) => (
+              <Pressable
+                key={action.status}
+                style={[styles.statusActionButton, action.danger && styles.statusActionButtonCancel]}
+                onPress={() => setPendingAction(action)}
+              >
+                <Text style={[styles.statusActionText, action.danger && styles.statusActionTextCancel]}>
+                  {action.label}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        </View>
+      )}
 
       <View style={styles.card}>
         <View style={styles.cardHeaderRow}>
@@ -176,18 +245,12 @@ export default function OrderDetail() {
         <DetailRow icon="pricetag-outline" label="TICKET ID" value={order.ticketNumber} />
         <DetailRow icon="person-outline" label="CUSTOMER" value={order.clientName} />
         <DetailRow icon="location-outline" label="REGION" value={order.city} />
-        <DetailRow icon="pricetag-outline" label="PRICE LIST" value={order.priceListName} />
         <DetailRow icon="calendar-outline" label="DUE DATE" value={formatDate(order.dueDate)} />
         {!!order.address && <DetailRow icon="location-outline" label="ADDRESS" value={order.address} />}
         <DetailRow
           icon="person-outline"
           label="SALESPERSON"
           value={order.createdBy ? displayName(order.createdBy.email) : '—'}
-        />
-        <DetailRow
-          icon="construct-outline"
-          label="ASSIGNEE"
-          value={order.assignee ? displayName(order.assignee.email) : 'Unassigned'}
           last
         />
       </View>
@@ -207,6 +270,23 @@ export default function OrderDetail() {
         )}
       </Pressable>
     </ScrollView>
+
+      <StatusActionModal
+        visible={!!pendingAction}
+        title={pendingAction?.label ?? ''}
+        message={
+          pendingAction
+            ? `${pendingAction.label} for ${order.ticketNumber} (${order.clientName})?`
+            : ''
+        }
+        confirmLabel={pendingAction?.label ?? 'Confirm'}
+        danger={pendingAction?.danger}
+        requireReason={pendingAction?.requireReason}
+        isSubmitting={isUpdatingStatus}
+        onCancel={() => setPendingAction(null)}
+        onConfirm={handleStatusChange}
+      />
+    </View>
   );
 }
 
@@ -284,6 +364,18 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   cardLabel: { fontSize: 12, fontWeight: '700', color: colors.textMuted, letterSpacing: 0.5 },
+  statusActionsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 },
+  statusActionButton: {
+    backgroundColor: colors.navy,
+    borderRadius: radius.md,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  statusActionText: { color: '#FFFFFF', fontWeight: '600', fontSize: 13 },
+  statusActionButtonCancel: { backgroundColor: colors.redMuted },
+  statusActionTextCancel: { color: colors.error },
   cardHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   itemsCountPill: { backgroundColor: colors.grayMuted, borderRadius: 20, paddingHorizontal: 8, paddingVertical: 3 },
   itemsCountText: { fontSize: 11, color: colors.textMuted, fontWeight: '600' },

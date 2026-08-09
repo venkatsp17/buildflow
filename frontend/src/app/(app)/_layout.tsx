@@ -3,6 +3,7 @@ import { StyleSheet, View } from 'react-native';
 
 import { useAuth } from '@/auth/AuthContext';
 import { BottomTabBar } from '@/components/BottomTabBar';
+import { NotificationProvider } from '@/notifications/NotificationContext';
 
 export default function AppLayout() {
   const { token, isLoading } = useAuth();
@@ -16,12 +17,14 @@ export default function AppLayout() {
   }
 
   return (
-    <View style={styles.container}>
-      <View style={styles.content}>
-        <Slot />
+    <NotificationProvider>
+      <View style={styles.container}>
+        <View style={styles.content}>
+          <Slot />
+        </View>
+        <BottomTabBar />
       </View>
-      <BottomTabBar />
-    </View>
+    </NotificationProvider>
   );
 }
 

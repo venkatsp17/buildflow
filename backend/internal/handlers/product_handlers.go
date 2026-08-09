@@ -42,16 +42,7 @@ func (h *ProductHandler) List(c *gin.Context) {
 		return
 	}
 
-	priceByProductID := map[uint]float64{}
-	var user models.User
-	if err := h.DB.First(&user, userID).Error; err == nil && user.PriceListID != nil {
-		var items []models.PriceListItem
-		if err := h.DB.Where("price_list_id = ?", *user.PriceListID).Find(&items).Error; err == nil {
-			for _, item := range items {
-				priceByProductID[item.ProductID] = item.UnitPrice
-			}
-		}
-	}
+	priceByProductID := priceListLookup(h.DB, userID)
 
 	results := make([]ProductWithPrice, len(products))
 	for i, product := range products {

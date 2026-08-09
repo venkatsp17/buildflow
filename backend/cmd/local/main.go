@@ -2,10 +2,12 @@ package main
 
 import (
 	"log"
+	"time"
 
 	"tracker-backend/internal/app"
 	"tracker-backend/internal/config"
 	"tracker-backend/internal/database"
+	"tracker-backend/internal/notify"
 )
 
 func main() {
@@ -15,6 +17,8 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to connect to database: %v", err)
 	}
+
+	notify.StartDelayedOrderScheduler(db, 2*time.Minute)
 
 	router := app.NewRouter(db, cfg.JWTSecret, cfg.CORSAllowedOrigins)
 

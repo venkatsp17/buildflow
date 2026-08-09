@@ -27,7 +27,6 @@ import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { DatePickerInput } from './DatePickerInput';
 import { LeafletMapPreview } from './LeafletMapPreview';
 
-const DEFAULT_CITY = 'Dubai';
 const DEFAULT_PRICE_LIST = 'Dubai Standard';
 
 const PRIORITIES = [
@@ -37,16 +36,16 @@ const PRIORITIES = [
   { value: 'low', label: 'Low' },
 ] as const;
 
-type ItemDraft = { productName: string; quantity: string; unitPrice: string; description: string };
+type ItemDraft = { productName: string; quantity: string; unitPrice: number | null; description: string };
 
 function emptyItem(): ItemDraft {
-  return { productName: '', quantity: '', unitPrice: '', description: '' };
+  return { productName: '', quantity: '', unitPrice: null, description: '' };
 }
 
 const CURRENCY = '₹';
 
 function lineTotal(item: ItemDraft): number {
-  return (Number(item.quantity) || 0) * (Number(item.unitPrice) || 0);
+  return (Number(item.quantity) || 0) * (item.unitPrice ?? 0);
 }
 
 type Props = {
@@ -75,6 +74,7 @@ export function NewOrderModal({ visible, onClose, onCreated }: Props) {
   const [addressResults, setAddressResults] = useState<GeocodeResult[]>([]);
   const [selectedLocation, setSelectedLocation] = useState<{ lat: number; lon: number } | null>(null);
   const [isGeocoding, setIsGeocoding] = useState(false);
+  const [city, setCity] = useState('');
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -84,8 +84,11 @@ export function NewOrderModal({ visible, onClose, onCreated }: Props) {
   const debouncedProductQuery = useDebouncedValue(activeProductQuery, 300);
   const debouncedAddress = useDebouncedValue(address, 400);
 
+  // Empty search text still hits the API — the backend returns its default
+  // alphabetical list in that case — so focusing the field shows a
+  // prepopulated list before the user types anything.
   useEffect(() => {
-    if (!token || !debouncedClientName.trim()) {
+    if (!token) {
       setCustomerResults([]);
       return;
     }
@@ -103,7 +106,7 @@ export function NewOrderModal({ visible, onClose, onCreated }: Props) {
   }, [token, debouncedClientName]);
 
   useEffect(() => {
-    if (!token || activeProductIndex === null || !debouncedProductQuery.trim()) {
+    if (!token || activeProductIndex === null) {
       setProductResults([]);
       return;
     }
@@ -143,7 +146,7 @@ export function NewOrderModal({ visible, onClose, onCreated }: Props) {
   }, [token, debouncedAddress]);
 
   const hasValidItems = items.some((item) => item.productName.trim() && Number(item.quantity) > 0);
-  const canSubmit = !!clientName.trim() && !!dueDate && hasValidItems && !isSubmitting;
+  const canSubmit = !!clientName.trim() && !!dueDate && !!city.trim() && hasValidItems && !isSubmitting;
   const orderTotal = items.reduce((sum, item) => sum + lineTotal(item), 0);
   const totalUnits = items.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
 
@@ -158,6 +161,7 @@ export function NewOrderModal({ visible, onClose, onCreated }: Props) {
     setAddress('');
     setAddressResults([]);
     setSelectedLocation(null);
+    setCity('');
     setError(null);
   };
 
@@ -181,7 +185,7 @@ export function NewOrderModal({ visible, onClose, onCreated }: Props) {
     try {
       const { order } = await createOrder(token, {
         clientName: clientName.trim(),
-        city: DEFAULT_CITY,
+        city: city.trim(),
         address: address.trim() || undefined,
         latitude: selectedLocation?.lat,
         longitude: selectedLocation?.lon,
@@ -195,7 +199,6 @@ export function NewOrderModal({ visible, onClose, onCreated }: Props) {
             description: item.description.trim() || undefined,
             quantity: Number(item.quantity),
             unit: 'units',
-            unitPrice: Number(item.unitPrice) || 0,
           })),
       });
       resetForm();
@@ -309,7 +312,10 @@ export function NewOrderModal({ visible, onClose, onCreated }: Props) {
                   placeholder="Select product..."
                   value={item.productName}
                   onChangeText={(text) => {
-                    updateItem(index, { productName: text });
+                    // Clear the price whenever the text no longer matches a
+                    // confirmed catalog selection — it must come from picking
+                    // a suggestion below, never be typed in directly.
+                    updateItem(index, { productName: text, unitPrice: null });
                     setActiveProductIndex(index);
                   }}
                   onFocus={() => setActiveProductIndex(index)}
@@ -325,7 +331,7 @@ export function NewOrderModal({ visible, onClose, onCreated }: Props) {
                         updateItem(index, {
                           productName: product.name,
                           description: product.description || item.description,
-                          unitPrice: product.unitPrice != null ? String(product.unitPrice) : item.unitPrice,
+                          unitPrice: product.unitPrice ?? null,
                         });
                         setActiveProductIndex(null);
                         setProductResults([]);
@@ -351,13 +357,13 @@ export function NewOrderModal({ visible, onClose, onCreated }: Props) {
                   onChangeText={(text) => updateItem(index, { quantity: text.replace(/[^0-9]/g, '') })}
                   keyboardType="number-pad"
                 />
-                <TextInput
-                  style={[styles.input, styles.plainInput, styles.qtyInput]}
-                  placeholder={`Price/unit (${CURRENCY})`}
-                  value={item.unitPrice}
-                  onChangeText={(text) => updateItem(index, { unitPrice: text.replace(/[^0-9.]/g, '') })}
-                  keyboardType="decimal-pad"
-                />
+                <View style={[styles.priceDisplay, styles.qtyInput]}>
+                  <Text style={item.unitPrice != null ? styles.priceDisplayValue : styles.priceDisplayEmpty}>
+                    {item.unitPrice != null
+                      ? `${CURRENCY}${item.unitPrice.toLocaleString()} / unit`
+                      : 'Pick a product for price'}
+                  </Text>
+                </View>
               </View>
               <TextInput
                 style={[styles.input, styles.plainInput, styles.notesFullInput]}
@@ -369,7 +375,7 @@ export function NewOrderModal({ visible, onClose, onCreated }: Props) {
               {lineTotal(item) > 0 && (
                 <Text style={styles.itemLineTotal}>
                   {item.quantity || 0} × {CURRENCY}
-                  {item.unitPrice || 0} = {CURRENCY}
+                  {item.unitPrice} = {CURRENCY}
                   {lineTotal(item).toLocaleString(undefined, { maximumFractionDigits: 2 })}
                 </Text>
               )}
@@ -390,6 +396,17 @@ export function NewOrderModal({ visible, onClose, onCreated }: Props) {
               </Text>
             </View>
           )}
+
+          <Text style={styles.label}>City</Text>
+          <View style={styles.inputWrap}>
+            <Ionicons name="business-outline" size={16} color={colors.textMuted} />
+            <TextInput
+              style={styles.input}
+              placeholder="City"
+              value={city}
+              onChangeText={setCity}
+            />
+          </View>
 
           <Text style={styles.label}>Delivery Address</Text>
           <View style={styles.inputWrap}>
@@ -416,6 +433,7 @@ export function NewOrderModal({ visible, onClose, onCreated }: Props) {
                   onPress={() => {
                     setAddress(result.displayName);
                     setSelectedLocation({ lat: result.latitude, lon: result.longitude });
+                    if (result.city) setCity(result.city);
                     setShowAddressSuggestions(false);
                     setAddressResults([]);
                   }}
@@ -505,7 +523,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
   },
   input: { flex: 1, paddingVertical: 12, fontSize: 14, color: colors.text },
-  plainInput: { paddingHorizontal: 12 },
+  plainInput: {
+    paddingHorizontal: 12,
+    backgroundColor: colors.card,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
   suggestionsBox: {
     backgroundColor: colors.card,
     borderWidth: 1,
@@ -554,6 +578,17 @@ const styles = StyleSheet.create({
   itemFieldsRow: { flexDirection: 'row', gap: 8 },
   qtyInput: { flex: 1 },
   notesFullInput: { marginTop: 8 },
+  priceDisplay: {
+    justifyContent: 'center',
+    backgroundColor: colors.grayMuted,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+  },
+  priceDisplayValue: { fontSize: 14, color: colors.text, fontWeight: '600' },
+  priceDisplayEmpty: { fontSize: 12, color: colors.textMuted },
   itemLineTotal: { fontSize: 12, fontWeight: '600', color: colors.textMuted, marginTop: 8, textAlign: 'right' },
   addItemButton: {
     flexDirection: 'row',

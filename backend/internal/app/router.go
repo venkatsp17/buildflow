@@ -26,6 +26,8 @@ func NewRouter(db *gorm.DB, jwtSecret string, corsAllowedOrigins []string) *gin.
 	geocodeHandler := handlers.NewGeocodeHandler()
 	priceListHandler := handlers.NewPriceListHandler(db)
 	userHandler := handlers.NewUserHandler(db)
+	notificationHandler := handlers.NewNotificationHandler(db)
+	pushTokenHandler := handlers.NewPushTokenHandler(db)
 
 	router.GET("/health", health.Health)
 
@@ -37,8 +39,21 @@ func NewRouter(db *gorm.DB, jwtSecret string, corsAllowedOrigins []string) *gin.
 	orderGroup := router.Group("/orders", middleware.RequireAuth(jwtSecret))
 	orderGroup.GET("", orderHandler.List)
 	orderGroup.GET("/summary", orderHandler.Summary)
+	orderGroup.GET("/priority", orderHandler.Priority)
+	orderGroup.GET("/queue", middleware.RequireRole(string(models.RoleManufacturing), string(models.RoleManager)), orderHandler.Queue)
 	orderGroup.GET("/:id", orderHandler.Detail)
 	orderGroup.POST("", middleware.RequireRole(string(models.RoleSales)), orderHandler.Create)
+	orderGroup.PATCH("/:id/status", middleware.RequireRole(string(models.RoleManufacturing), string(models.RoleManager)), orderHandler.UpdateStatus)
+
+	notificationGroup := router.Group("/notifications", middleware.RequireAuth(jwtSecret))
+	notificationGroup.GET("", notificationHandler.List)
+	notificationGroup.PATCH("/:id/read", notificationHandler.MarkRead)
+	notificationGroup.DELETE("/:id", notificationHandler.Delete)
+	notificationGroup.DELETE("", notificationHandler.ClearAll)
+
+	pushTokenGroup := router.Group("/push-tokens", middleware.RequireAuth(jwtSecret))
+	pushTokenGroup.POST("", pushTokenHandler.Register)
+	pushTokenGroup.DELETE("", pushTokenHandler.Unregister)
 
 	router.GET("/customers", middleware.RequireAuth(jwtSecret), customerHandler.List)
 	router.GET("/products", middleware.RequireAuth(jwtSecret), productHandler.List)

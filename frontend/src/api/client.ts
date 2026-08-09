@@ -83,14 +83,13 @@ export type Order = {
   longitude?: number;
   priceListName: string;
   status: string;
+  rejectionReason?: string;
   urgency: string;
   value: number;
   currency: string;
   dueDate: string;
   createdById: number;
   createdBy?: User;
-  assigneeId?: number;
-  assignee?: User;
   items: OrderItem[];
   createdAt: string;
   updatedAt: string;
@@ -113,6 +112,7 @@ export type Product = {
 
 export type GeocodeResult = {
   displayName: string;
+  city: string;
   latitude: number;
   longitude: number;
 };
@@ -144,8 +144,58 @@ export type OrderSummary = {
   urgent: number;
 };
 
-export function listOrders(token: string): Promise<{ orders: Order[] }> {
-  return request<{ orders: Order[] }>('/orders', {
+export type OrderSort = 'newest' | 'oldest' | 'due_asc' | 'due_desc' | 'value_asc' | 'value_desc';
+
+export type ListOrdersParams = {
+  search?: string;
+  status?: string;
+  customerId?: number;
+  dateFrom?: string;
+  dateTo?: string;
+  sort?: OrderSort;
+  limit?: number;
+  offset?: number;
+};
+
+// Search, filtering, sorting, and paging all happen in the backend query,
+// not in the frontend, so the order list stays fast and bounded as history
+// grows — the response's `total` tells the caller how much more is left to
+// page through via `offset`.
+export function listOrders(token: string, params: ListOrdersParams = {}): Promise<{ orders: Order[]; total: number }> {
+  const query = new URLSearchParams();
+  if (params.search) query.set('search', params.search);
+  if (params.status && params.status !== 'all') query.set('status', params.status);
+  if (params.customerId) query.set('customerId', String(params.customerId));
+  if (params.dateFrom) query.set('dateFrom', params.dateFrom);
+  if (params.dateTo) query.set('dateTo', params.dateTo);
+  if (params.sort) query.set('sort', params.sort);
+  query.set('limit', String(params.limit ?? 20));
+  query.set('offset', String(params.offset ?? 0));
+  return request<{ orders: Order[]; total: number }>(`/orders?${query.toString()}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+// Sales home's priority queue: urgent orders (capped at 5, soonest due date
+// first), then all high-urgency orders, computed server-side.
+export function getPriorityOrders(token: string): Promise<{ orders: Order[] }> {
+  return request<{ orders: Order[] }>('/orders/priority', {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export type OrderQueueStats = {
+  pending: number;
+  active: number;
+  delayed: number;
+  dispatched: number;
+};
+
+// Manufacturing/manager's working queue: every order still in the
+// pipeline (pending, approved, in_progress, dispatched), most urgent and
+// soonest-due first, plus counts for the dashboard's stat tiles.
+export function getOrderQueue(token: string): Promise<{ orders: Order[]; stats: OrderQueueStats }> {
+  return request<{ orders: Order[]; stats: OrderQueueStats }>('/orders/queue', {
     headers: { Authorization: `Bearer ${token}` },
   });
 }
@@ -172,7 +222,7 @@ export type CreateOrderInput = {
   urgency: string;
   currency?: string;
   dueDate: string;
-  items: { productName: string; description?: string; quantity: number; unit: string; unitPrice?: number }[];
+  items: { productName: string; description?: string; quantity: number; unit: string }[];
 };
 
 export function createOrder(token: string, input: CreateOrderInput): Promise<{ order: Order }> {
@@ -180,6 +230,76 @@ export function createOrder(token: string, input: CreateOrderInput): Promise<{ o
     method: 'POST',
     headers: { Authorization: `Bearer ${token}` },
     body: JSON.stringify(input),
+  });
+}
+
+export function updateOrderStatus(
+  token: string,
+  id: number | string,
+  status: string,
+  reason?: string,
+): Promise<{ order: Order }> {
+  return request<{ order: Order }>(`/orders/${id}/status`, {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ status, reason }),
+  });
+}
+
+export type NotificationType = 'order_approved' | 'order_rejected' | 'dispatch_ready' | 'order_delayed';
+
+export type Notification = {
+  id: number;
+  userId: number;
+  orderId: number;
+  order?: Order;
+  type: NotificationType;
+  title: string;
+  message: string;
+  read: boolean;
+  createdAt: string;
+};
+
+export function listNotifications(token: string): Promise<{ notifications: Notification[]; unreadCount: number }> {
+  return request<{ notifications: Notification[]; unreadCount: number }>('/notifications', {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export function markNotificationRead(token: string, id: number): Promise<void> {
+  return request<void>(`/notifications/${id}/read`, {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export function deleteNotification(token: string, id: number): Promise<void> {
+  return request<void>(`/notifications/${id}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export function clearAllNotifications(token: string): Promise<void> {
+  return request<void>('/notifications', {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export function registerPushToken(token: string, pushToken: string): Promise<void> {
+  return request<void>('/push-tokens', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ token: pushToken }),
+  });
+}
+
+export function unregisterPushToken(token: string, pushToken: string): Promise<void> {
+  return request<void>('/push-tokens', {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ token: pushToken }),
   });
 }
 

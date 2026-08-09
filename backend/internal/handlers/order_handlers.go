@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -11,7 +13,25 @@ import (
 
 	"tracker-backend/internal/middleware"
 	"tracker-backend/internal/models"
+	"tracker-backend/internal/notify"
 )
+
+const (
+	defaultOrdersPageSize = 20
+	maxOrdersPageSize     = 100
+)
+
+// orderSortOptions maps a ?sort= value to an ORDER BY clause. id is always
+// the final tiebreaker so pagination stays stable even when many rows share
+// the same due_date/value.
+var orderSortOptions = map[string]string{
+	"newest":     "orders.created_at desc, orders.id desc",
+	"oldest":     "orders.created_at asc, orders.id asc",
+	"due_asc":    "orders.due_date asc, orders.id desc",
+	"due_desc":   "orders.due_date desc, orders.id desc",
+	"value_asc":  "orders.value asc, orders.id desc",
+	"value_desc": "orders.value desc, orders.id desc",
+}
 
 type OrderHandler struct {
 	DB *gorm.DB
@@ -21,32 +41,231 @@ func NewOrderHandler(db *gorm.DB) *OrderHandler {
 	return &OrderHandler{DB: db}
 }
 
-// List returns the orders created by the authenticated user, most recent first.
+// redactPriceList clears PriceListName for anyone but a manager — sales
+// picks products off their assigned price list but never sees its name,
+// and manufacturing fulfills orders without needing to know pricing
+// context either. Applied at the handler layer (not left to the frontend
+// to simply not render) since the field would otherwise still be sitting
+// in the JSON response for anyone to read via devtools.
+func redactPriceList(role any, orders []models.Order) {
+	if role == string(models.RoleManager) {
+		return
+	}
+	for i := range orders {
+		orders[i].PriceListName = ""
+	}
+}
+
+func redactPriceListOne(role any, order *models.Order) {
+	if role == string(models.RoleManager) {
+		return
+	}
+	order.PriceListName = ""
+}
+
+// List returns a page of orders visible to the authenticated user (newest
+// first by default). Supports ?search= (matches ticket number, client name,
+// or any item's product name), ?status= (a stored OrderStatus value, or the
+// derived "delayed" status), ?customerId=, ?dateFrom=/?dateTo= (inclusive
+// due_date range, YYYY-MM-DD), ?sort= (see orderSortOptions), and
+// ?limit=/?offset= for pagination — filtering, sorting, and paging all
+// happen in SQL, not in the frontend, so the query stays fast and bounded
+// no matter how large an account's order history grows. The response
+// includes the total matching count so the client knows how much more is
+// left to page through.
 func (h *OrderHandler) List(c *gin.Context) {
 	userID := c.MustGet(middleware.UserIDKey).(uint)
+	role, _ := c.Get(middleware.RoleKey)
+	search := strings.TrimSpace(c.Query("search"))
+	status := strings.TrimSpace(c.Query("status"))
 
-	var orders []models.Order
-	if err := h.DB.Preload("Items").
-		Where("created_by_id = ?", userID).
-		Order("created_at desc").
-		Find(&orders).Error; err != nil {
+	limit := defaultOrdersPageSize
+	if l, err := strconv.Atoi(c.Query("limit")); err == nil && l > 0 && l <= maxOrdersPageSize {
+		limit = l
+	}
+	offset := 0
+	if o, err := strconv.Atoi(c.Query("offset")); err == nil && o >= 0 {
+		offset = o
+	}
+
+	orderBy, ok := orderSortOptions[c.Query("sort")]
+	if !ok {
+		orderBy = orderSortOptions["newest"]
+	}
+
+	// baseQuery is rebuilt fresh for the count and the page fetch so that
+	// chaining Order/Limit/Offset onto one of them can't leak into the
+	// other via GORM's shared statement builder.
+	baseQuery := func() *gorm.DB {
+		q := h.DB.Model(&models.Order{})
+		// Sales only sees their own orders; manufacturing/manager need to
+		// see every sales rep's orders to fulfill and update them.
+		if role == string(models.RoleSales) {
+			q = q.Where("orders.created_by_id = ?", userID)
+		}
+
+		if search != "" {
+			like := "%" + strings.ToLower(search) + "%"
+			q = q.Where(
+				"LOWER(orders.ticket_number) LIKE ? OR LOWER(orders.client_name) LIKE ? OR EXISTS (SELECT 1 FROM order_items oi WHERE oi.order_id = orders.id AND LOWER(oi.product_name) LIKE ?)",
+				like, like, like,
+			)
+		}
+
+		if customerID, err := strconv.Atoi(c.Query("customerId")); err == nil && customerID > 0 {
+			q = q.Where("orders.customer_id = ?", customerID)
+		}
+
+		if dateFrom, err := time.Parse("2006-01-02", c.Query("dateFrom")); err == nil {
+			q = q.Where("orders.due_date >= ?", dateFrom)
+		}
+		if dateTo, err := time.Parse("2006-01-02", c.Query("dateTo")); err == nil {
+			q = q.Where("orders.due_date < ?", dateTo.AddDate(0, 0, 1))
+		}
+
+		// pending, approved, and rejected are the top-level "super states" a
+		// sales rep or manufacturing thinks in terms of. approved is really a
+		// family of statuses — everything past the approval gate — with its
+		// own sub-states (in_progress, dispatched, delayed, delivered)
+		// selectable individually via the same param.
+		switch status {
+		case "":
+			// no status filter
+		case "approved":
+			q = q.Where(
+				"orders.status IN ?",
+				[]models.OrderStatus{models.OrderStatusApproved, models.OrderStatusInProgress, models.OrderStatusDispatched, models.OrderStatusDelivered},
+			)
+		case "delayed":
+			q = q.Where(
+				"orders.status IN ? AND orders.due_date < ?",
+				[]models.OrderStatus{models.OrderStatusApproved, models.OrderStatusInProgress, models.OrderStatusDispatched}, time.Now(),
+			)
+		default:
+			q = q.Where("orders.status = ?", status)
+		}
+
+		return q
+	}
+
+	var total int64
+	if err := baseQuery().Count(&total).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load orders"})
 		return
 	}
 
+	var orders []models.Order
+	if err := baseQuery().Preload("Items").Order(orderBy).Limit(limit).Offset(offset).Find(&orders).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load orders"})
+		return
+	}
+
+	redactPriceList(role, orders)
+	c.JSON(http.StatusOK, gin.H{"orders": orders, "total": total})
+}
+
+// Priority returns the authenticated user's priority queue for the Sales
+// dashboard: urgent orders first (capped at 5, soonest due date first), then
+// all high-urgency orders (also soonest due date first).
+func (h *OrderHandler) Priority(c *gin.Context) {
+	userID := c.MustGet(middleware.UserIDKey).(uint)
+
+	var urgentOrders []models.Order
+	if err := h.DB.Preload("Items").
+		Where("created_by_id = ? AND urgency = ?", userID, models.OrderUrgencyUrgent).
+		Order("due_date asc").
+		Limit(5).
+		Find(&urgentOrders).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load priority orders"})
+		return
+	}
+
+	var highOrders []models.Order
+	if err := h.DB.Preload("Items").
+		Where("created_by_id = ? AND urgency = ?", userID, models.OrderUrgencyHigh).
+		Order("due_date asc").
+		Find(&highOrders).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load priority orders"})
+		return
+	}
+
+	orders := append(urgentOrders, highOrders...)
+	redactPriceList(c.MustGet(middleware.RoleKey), orders)
 	c.JSON(http.StatusOK, gin.H{"orders": orders})
+}
+
+// queuePipelineStatuses are the statuses still somewhere in the production
+// pipeline, used only to compute the dashboard's overview stats (e.g.
+// "delayed" spans the whole pipeline, not just pending). The queue's order
+// list itself is pending-only — see Queue.
+var queuePipelineStatuses = []models.OrderStatus{
+	models.OrderStatusPending,
+	models.OrderStatusApproved,
+	models.OrderStatusInProgress,
+	models.OrderStatusDispatched,
+}
+
+type orderQueueStats struct {
+	Pending    int64 `json:"pending"`
+	Active     int64 `json:"active"`
+	Delayed    int64 `json:"delayed"`
+	Dispatched int64 `json:"dispatched"`
+}
+
+// Queue returns manufacturing/manager's approval inbox (manufacturing/
+// manager only) — orders still awaiting an Approve/Reject decision, most
+// urgent and soonest-due first — plus pipeline-wide counts for the
+// dashboard's stat tiles. Once approved, an order moves on to the general
+// order list; it doesn't keep appearing here.
+func (h *OrderHandler) Queue(c *gin.Context) {
+	var orders []models.Order
+	err := h.DB.Preload("Items").Preload("CreatedBy").
+		Where("status = ?", models.OrderStatusPending).
+		Order(`CASE urgency WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END, due_date ASC`).
+		Find(&orders).Error
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load queue"})
+		return
+	}
+
+	var stats orderQueueStats
+	if err := h.DB.Model(&models.Order{}).Where("status = ?", models.OrderStatusPending).Count(&stats.Pending).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load queue"})
+		return
+	}
+	if err := h.DB.Model(&models.Order{}).Where("status = ?", models.OrderStatusInProgress).Count(&stats.Active).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load queue"})
+		return
+	}
+	if err := h.DB.Model(&models.Order{}).Where("status = ?", models.OrderStatusDispatched).Count(&stats.Dispatched).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load queue"})
+		return
+	}
+	if err := h.DB.Model(&models.Order{}).
+		Where("status IN ? AND due_date < ?", queuePipelineStatuses, time.Now()).
+		Count(&stats.Delayed).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load queue"})
+		return
+	}
+
+	redactPriceList(c.MustGet(middleware.RoleKey), orders)
+	c.JSON(http.StatusOK, gin.H{"orders": orders, "stats": stats})
 }
 
 // Detail returns a single order (with items, creator, and assignee) owned by
 // the authenticated user.
 func (h *OrderHandler) Detail(c *gin.Context) {
 	userID := c.MustGet(middleware.UserIDKey).(uint)
+	role, _ := c.Get(middleware.RoleKey)
 	id := c.Param("id")
 
+	query := h.DB.Preload("Items").Preload("CreatedBy")
+	if role == string(models.RoleSales) {
+		query = query.Where("created_by_id = ?", userID)
+	}
+
 	var order models.Order
-	err := h.DB.Preload("Items").Preload("CreatedBy").Preload("Assignee").
-		Where("created_by_id = ?", userID).
-		First(&order, id).Error
+	err := query.First(&order, id).Error
 
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -57,6 +276,7 @@ func (h *OrderHandler) Detail(c *gin.Context) {
 		return
 	}
 
+	redactPriceListOne(role, &order)
 	c.JSON(http.StatusOK, gin.H{"order": order})
 }
 
@@ -104,11 +324,10 @@ func (h *OrderHandler) Summary(c *gin.Context) {
 }
 
 type orderItemRequest struct {
-	ProductName string  `json:"productName" binding:"required"`
-	Description string  `json:"description"`
-	Quantity    int     `json:"quantity" binding:"required,min=1"`
-	Unit        string  `json:"unit" binding:"required"`
-	UnitPrice   float64 `json:"unitPrice" binding:"gte=0"`
+	ProductName string `json:"productName" binding:"required"`
+	Description string `json:"description"`
+	Quantity    int    `json:"quantity" binding:"required,min=1"`
+	Unit        string `json:"unit" binding:"required"`
 }
 
 type createOrderRequest struct {
@@ -166,6 +385,7 @@ func findOrCreateProduct(db *gorm.DB, name, unit string, userID uint) (models.Pr
 // creates without a two-phase insert-then-update.
 func (h *OrderHandler) Create(c *gin.Context) {
 	userID := c.MustGet(middleware.UserIDKey).(uint)
+	role := c.MustGet(middleware.RoleKey)
 
 	var req createOrderRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -196,6 +416,10 @@ func (h *OrderHandler) Create(c *gin.Context) {
 		return
 	}
 
+	// Pricing always comes from the requesting user's assigned price list,
+	// never from client input — sales reps can't set or edit prices.
+	priceByProductID := priceListLookup(h.DB, userID)
+
 	items := make([]models.OrderItem, len(req.Items))
 	var value float64
 	for i, item := range req.Items {
@@ -204,15 +428,16 @@ func (h *OrderHandler) Create(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to resolve product"})
 			return
 		}
+		unitPrice := priceByProductID[product.ID]
 		items[i] = models.OrderItem{
 			ProductID:   &product.ID,
 			ProductName: product.Name,
 			Description: item.Description,
 			Quantity:    item.Quantity,
 			Unit:        item.Unit,
-			UnitPrice:   item.UnitPrice,
+			UnitPrice:   unitPrice,
 		}
-		value += float64(item.Quantity) * item.UnitPrice
+		value += float64(item.Quantity) * unitPrice
 	}
 
 	order := models.Order{
@@ -243,5 +468,83 @@ func (h *OrderHandler) Create(c *gin.Context) {
 		return
 	}
 
+	redactPriceListOne(role, &order)
 	c.JSON(http.StatusCreated, gin.H{"order": order})
+}
+
+type updateOrderStatusRequest struct {
+	Status string `json:"status" binding:"required,oneof=pending approved rejected in_progress dispatched delivered cancelled"`
+	Reason string `json:"reason"`
+}
+
+// UpdateStatus moves an order to a new status (manufacturing/manager only —
+// sales creates orders but doesn't fulfill them). Only transitions defined
+// in models.orderStatusTransitions are allowed, so the API can't be used to
+// skip steps or resurrect a terminal order. Notifying the order's creator
+// happens in the same transaction as the status change itself, so the
+// alert is created at the moment the event happens rather than synthesized
+// later when someone happens to open the Alerts screen.
+func (h *OrderHandler) UpdateStatus(c *gin.Context) {
+	id := c.Param("id")
+	role := c.MustGet(middleware.RoleKey)
+
+	var req updateOrderStatusRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	newStatus := models.OrderStatus(req.Status)
+	reason := strings.TrimSpace(req.Reason)
+	if newStatus == models.OrderStatusRejected && reason == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "reason is required to reject an order"})
+		return
+	}
+
+	var order models.Order
+	if err := h.DB.First(&order, id).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "order not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load order"})
+		return
+	}
+
+	previousStatus := order.Status
+	if !previousStatus.CanTransitionTo(newStatus) {
+		c.JSON(http.StatusConflict, gin.H{"error": fmt.Sprintf("cannot move an order from %s to %s", previousStatus, newStatus)})
+		return
+	}
+
+	order.RejectionReason = reason
+	notification := notify.StatusChangeNotification(order, previousStatus, newStatus)
+
+	err := h.DB.Transaction(func(tx *gorm.DB) error {
+		updates := map[string]any{"status": newStatus}
+		if newStatus == models.OrderStatusRejected {
+			updates["rejection_reason"] = reason
+		}
+		if err := tx.Model(&order).Updates(updates).Error; err != nil {
+			return err
+		}
+		if notification != nil {
+			return tx.Create(notification).Error
+		}
+		return nil
+	})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update order status"})
+		return
+	}
+
+	// Pushed after the transaction commits — the goroutine outlives this
+	// request, so it must use the long-lived h.DB, not the closed tx.
+	if notification != nil {
+		notify.SendPush(h.DB, *notification)
+	}
+
+	order.Status = newStatus
+	redactPriceListOne(role, &order)
+	c.JSON(http.StatusOK, gin.H{"order": order})
 }

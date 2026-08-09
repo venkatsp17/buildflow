@@ -23,11 +23,22 @@ func Connect(databaseURL string) (*gorm.DB, error) {
 		&models.PriceListItem{},
 		&models.Order{},
 		&models.OrderItem{},
+		&models.Notification{},
+		&models.PushToken{},
 	); err != nil {
 		return nil, err
 	}
 
 	if err := db.Exec("CREATE SEQUENCE IF NOT EXISTS order_ticket_seq START 2400").Error; err != nil {
+		return nil, err
+	}
+
+	if err := db.Exec("ALTER TABLE orders DROP COLUMN IF EXISTS assignee_id").Error; err != nil {
+		return nil, err
+	}
+
+	// One-time rename of the "done" status value to "delivered".
+	if err := db.Exec("UPDATE orders SET status = 'delivered' WHERE status = 'done'").Error; err != nil {
 		return nil, err
 	}
 
