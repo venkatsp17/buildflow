@@ -12,8 +12,9 @@ import (
 )
 
 const (
-	UserIDKey = "userID"
-	RoleKey   = "role"
+	UserIDKey      = "userID"
+	RoleKey        = "role"
+	IsSuperUserKey = "isSuperUser"
 )
 
 // RequireAuth validates the Authorization: Bearer <token> header and stores
@@ -42,7 +43,7 @@ func RequireAuth(db *gorm.DB, jwtSecret string) gin.HandlerFunc {
 		}
 
 		var user models.User
-		if err := db.Select("active", "must_reset_password").First(&user, claims.UserID).Error; err != nil || !user.Active {
+		if err := db.Select("active", "must_reset_password", "is_super_user").First(&user, claims.UserID).Error; err != nil || !user.Active {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "account disabled"})
 			return
 		}
@@ -58,6 +59,7 @@ func RequireAuth(db *gorm.DB, jwtSecret string) gin.HandlerFunc {
 
 		c.Set(UserIDKey, claims.UserID)
 		c.Set(RoleKey, claims.Role)
+		c.Set(IsSuperUserKey, user.IsSuperUser)
 		c.Next()
 	}
 }
@@ -76,6 +78,23 @@ func RequireRole(roles ...string) gin.HandlerFunc {
 
 		if !allowed[roleStr] {
 			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "insufficient permissions"})
+			return
+		}
+
+		c.Next()
+	}
+}
+
+// RequireSuperUser must run after RequireAuth. It's a narrower permission
+// than any role check — a manager can create accounts, but only a super
+// user manager can disable one (see ensureSuperUserBootstrap in database.go
+// for how that flag gets set; it's never derived from a role or hardcoded
+// identifier).
+func RequireSuperUser() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		isSuperUser, _ := c.Get(IsSuperUserKey)
+		if b, ok := isSuperUser.(bool); !ok || !b {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "super user permission required"})
 			return
 		}
 

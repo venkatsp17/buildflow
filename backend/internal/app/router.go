@@ -67,10 +67,14 @@ func NewRouter(db *gorm.DB, jwtSecret string, corsAllowedOrigins []string) *gin.
 	priceListGroup.POST("", priceListHandler.Create)
 	priceListGroup.PUT("/:id", priceListHandler.Update)
 
+	superUserOnly := middleware.RequireSuperUser()
+
 	router.GET("/users", middleware.RequireAuth(db, jwtSecret), managerOnly, userHandler.List)
 	router.POST("/users", middleware.RequireAuth(db, jwtSecret), managerOnly, userHandler.CreateUser)
 	router.PATCH("/users/:id/price-list", middleware.RequireAuth(db, jwtSecret), managerOnly, userHandler.AssignPriceList)
-	router.PATCH("/users/:id/active", middleware.RequireAuth(db, jwtSecret), managerOnly, userHandler.SetUserActive)
+	// Narrower than managerOnly: every manager can create accounts, but only
+	// a super user manager can disable/enable one.
+	router.PATCH("/users/:id/active", middleware.RequireAuth(db, jwtSecret), managerOnly, superUserOnly, userHandler.SetUserActive)
 
 	return router
 }

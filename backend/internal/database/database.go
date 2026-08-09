@@ -1,6 +1,8 @@
 package database
 
 import (
+	"errors"
+
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 
@@ -34,6 +36,10 @@ func Connect(databaseURL string) (*gorm.DB, error) {
 		&models.Notification{},
 		&models.PushToken{},
 	); err != nil {
+		return nil, err
+	}
+
+	if err := ensureSuperUserBootstrap(db); err != nil {
 		return nil, err
 	}
 
@@ -101,6 +107,35 @@ func migrateUserIdentifierColumns(db *gorm.DB) error {
 	}
 
 	return nil
+}
+
+// ensureSuperUserBootstrap guarantees there's always at least one super user
+// once a manager account exists — otherwise disabling accounts (super-user
+// only, see middleware.RequireSuperUser) would be permanently unreachable
+// through the API after this feature ships, with no way to grant the
+// permission short of a manual DB edit. Nothing is hardcoded: the earliest
+// manager account (by creation order) is promoted, and only if no super
+// user exists yet — it never overrides one that's already been set or
+// deliberately revoked.
+func ensureSuperUserBootstrap(db *gorm.DB) error {
+	var superUserCount int64
+	if err := db.Model(&models.User{}).Where("role = ? AND is_super_user = ?", models.RoleManager, true).Count(&superUserCount).Error; err != nil {
+		return err
+	}
+	if superUserCount > 0 {
+		return nil
+	}
+
+	var earliestManager models.User
+	err := db.Where("role = ?", models.RoleManager).Order("created_at asc, id asc").First(&earliestManager).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+
+	return db.Model(&earliestManager).Update("is_super_user", true).Error
 }
 
 // seedBaseData inserts a starter Customer/Product catalog the first time the

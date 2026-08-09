@@ -159,6 +159,11 @@ export function PricesScreen() {
                 <View style={styles.cardBody}>
                   <View style={styles.cardTitleRow}>
                     <Text style={styles.cardTitle}>{teamUser.name}</Text>
+                    {teamUser.isSuperUser && (
+                      <View style={styles.superUserPill}>
+                        <Text style={styles.superUserPillText}>Super User</Text>
+                      </View>
+                    )}
                     {!teamUser.active && (
                       <View style={styles.disabledPill}>
                         <Text style={styles.disabledPillText}>Disabled</Text>
@@ -227,7 +232,9 @@ export function PricesScreen() {
               </>
             )}
 
-            {managingUser.id === currentUser?.id ? (
+            {!currentUser?.isSuperUser ? (
+              <Text style={styles.selfNote}>Only a super user can disable or enable accounts.</Text>
+            ) : managingUser.id === currentUser?.id ? (
               <Text style={styles.selfNote}>You can't disable your own account.</Text>
             ) : (
               <Pressable
@@ -325,6 +332,8 @@ const styles = StyleSheet.create({
   cardSubtitle: { fontSize: 13, color: colors.textMuted, marginTop: 2 },
   disabledPill: { backgroundColor: colors.redMuted, borderRadius: 20, paddingHorizontal: 8, paddingVertical: 2 },
   disabledPillText: { fontSize: 10, fontWeight: '700', color: colors.red },
+  superUserPill: { backgroundColor: colors.amberMuted, borderRadius: 20, paddingHorizontal: 8, paddingVertical: 2 },
+  superUserPillText: { fontSize: 10, fontWeight: '700', color: colors.navy },
   addButton: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -7,6 +7,7 @@ export type User = {
   role: string;
   active: boolean;
   mustResetPassword: boolean;
+  isSuperUser: boolean;
   priceListId?: number;
   createdAt: string;
   updatedAt: string;
