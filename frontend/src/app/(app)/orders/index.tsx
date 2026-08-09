@@ -1,14 +1,18 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
-import { searchCustomers, type Customer, type Order } from '@/api/client';
+import { searchCustomers, updateOrderStatus, type Customer, type Order } from '@/api/client';
 import { useAuth } from '@/auth/AuthContext';
 import { DatePickerInput } from '@/components/DatePickerInput';
 import { NewOrderModal } from '@/components/NewOrderModal';
 import { OrderCard } from '@/components/OrderCard';
+import { StatusActionModal } from '@/components/StatusActionModal';
 import { approvedSubStatusFilters, colors, radius, sortOptions, superStatusFilters } from '@/constants/theme';
+import { useDebouncedValue } from '@/hooks/useDebouncedValue';
+import { defaultDateFrom, useOrdersList } from '@/hooks/useOrdersList';
+import { useNotifications } from '@/notifications/NotificationContext';
 
 const APPROVED_SUB_KEYS = new Set(approvedSubStatusFilters.map((f) => f.key));
 
@@ -22,12 +26,19 @@ function superStatusFor(status: string): string {
   if (status === 'approved' || APPROVED_SUB_KEYS.has(status)) return 'approved';
   return 'all';
 }
-import { useDebouncedValue } from '@/hooks/useDebouncedValue';
-import { defaultDateFrom, useOrdersList } from '@/hooks/useOrdersList';
-import { useNotifications } from '@/notifications/NotificationContext';
+
+type PendingAction = {
+  order: Order;
+  targetStatus: string;
+  title: string;
+  message: string;
+  confirmLabel: string;
+  danger?: boolean;
+  requireReason?: boolean;
+};
 
 export default function Orders() {
-  const { token, logout } = useAuth();
+  const { token, user, logout } = useAuth();
   const router = useRouter();
   const {
     orders,
@@ -54,6 +65,9 @@ export default function Orders() {
   const { unreadCount } = useNotifications();
   const [isNewOrderOpen, setIsNewOrderOpen] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
+  const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
+  const [isSubmittingAction, setIsSubmittingAction] = useState(false);
+  const canApprove = user?.role === 'manufacturing' || user?.role === 'manager';
 
   const [customerQuery, setCustomerQuery] = useState('');
   const [showCustomerSuggestions, setShowCustomerSuggestions] = useState(false);
@@ -85,6 +99,40 @@ export default function Orders() {
     setIsNewOrderOpen(false);
     await reload();
     void order;
+  };
+
+  const askApprove = (order: Order) =>
+    setPendingAction({
+      order,
+      targetStatus: 'approved',
+      title: 'Approve order?',
+      message: `Approve ${order.ticketNumber} for ${order.clientName}? It'll still need a separate "Start" action (from the order detail page) before production begins.`,
+      confirmLabel: 'Approve',
+    });
+
+  const askReject = (order: Order) =>
+    setPendingAction({
+      order,
+      targetStatus: 'rejected',
+      title: 'Reject order?',
+      message: `Reject ${order.ticketNumber} for ${order.clientName}? The sales rep will be notified with your reason.`,
+      confirmLabel: 'Reject',
+      danger: true,
+      requireReason: true,
+    });
+
+  const handleConfirmAction = async (reason?: string) => {
+    if (!token || !pendingAction) return;
+    setIsSubmittingAction(true);
+    try {
+      await updateOrderStatus(token, pendingAction.order.id, pendingAction.targetStatus, reason);
+      setPendingAction(null);
+      await reload();
+    } catch (err) {
+      Alert.alert('Failed to update order', err instanceof Error ? err.message : 'Unknown error');
+    } finally {
+      setIsSubmittingAction(false);
+    }
   };
 
   const clearAdvancedFilters = () => {
@@ -296,7 +344,12 @@ export default function Orders() {
 
         <View style={styles.cardsList}>
           {orders.map((order) => (
-            <OrderCard key={order.id} order={order} />
+            <OrderCard
+              key={order.id}
+              order={order}
+              onApprove={canApprove && order.status === 'pending' ? () => askApprove(order) : undefined}
+              onReject={canApprove && order.status === 'pending' ? () => askReject(order) : undefined}
+            />
           ))}
         </View>
 
@@ -319,6 +372,18 @@ export default function Orders() {
         visible={isNewOrderOpen}
         onClose={() => setIsNewOrderOpen(false)}
         onCreated={handleOrderCreated}
+      />
+
+      <StatusActionModal
+        visible={!!pendingAction}
+        title={pendingAction?.title ?? ''}
+        message={pendingAction?.message ?? ''}
+        confirmLabel={pendingAction?.confirmLabel ?? 'Confirm'}
+        danger={pendingAction?.danger}
+        requireReason={pendingAction?.requireReason}
+        isSubmitting={isSubmittingAction}
+        onCancel={() => setPendingAction(null)}
+        onConfirm={handleConfirmAction}
       />
     </View>
   );

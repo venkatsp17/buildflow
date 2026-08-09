@@ -184,21 +184,6 @@ export function getPriorityOrders(token: string): Promise<{ orders: Order[] }> {
   });
 }
 
-export type OrderQueueStats = {
-  pending: number;
-  active: number;
-  delayed: number;
-  dispatched: number;
-};
-
-// Manufacturing/manager's working queue: every order still in the
-// pipeline (pending, approved, in_progress, dispatched), most urgent and
-// soonest-due first, plus counts for the dashboard's stat tiles.
-export function getOrderQueue(token: string): Promise<{ orders: Order[]; stats: OrderQueueStats }> {
-  return request<{ orders: Order[]; stats: OrderQueueStats }>('/orders/queue', {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-}
 
 export function getOrder(token: string, id: number | string): Promise<{ order: Order }> {
   return request<{ order: Order }>(`/orders/${id}`, {

@@ -194,64 +194,6 @@ func (h *OrderHandler) Priority(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"orders": orders})
 }
 
-// queuePipelineStatuses are the statuses still somewhere in the production
-// pipeline, used only to compute the dashboard's overview stats (e.g.
-// "delayed" spans the whole pipeline, not just pending). The queue's order
-// list itself is pending-only — see Queue.
-var queuePipelineStatuses = []models.OrderStatus{
-	models.OrderStatusPending,
-	models.OrderStatusApproved,
-	models.OrderStatusInProgress,
-	models.OrderStatusDispatched,
-}
-
-type orderQueueStats struct {
-	Pending    int64 `json:"pending"`
-	Active     int64 `json:"active"`
-	Delayed    int64 `json:"delayed"`
-	Dispatched int64 `json:"dispatched"`
-}
-
-// Queue returns manufacturing/manager's approval inbox (manufacturing/
-// manager only) — orders still awaiting an Approve/Reject decision, most
-// urgent and soonest-due first — plus pipeline-wide counts for the
-// dashboard's stat tiles. Once approved, an order moves on to the general
-// order list; it doesn't keep appearing here.
-func (h *OrderHandler) Queue(c *gin.Context) {
-	var orders []models.Order
-	err := h.DB.Preload("Items").Preload("CreatedBy").
-		Where("status = ?", models.OrderStatusPending).
-		Order(`CASE urgency WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END, due_date ASC`).
-		Find(&orders).Error
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load queue"})
-		return
-	}
-
-	var stats orderQueueStats
-	if err := h.DB.Model(&models.Order{}).Where("status = ?", models.OrderStatusPending).Count(&stats.Pending).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load queue"})
-		return
-	}
-	if err := h.DB.Model(&models.Order{}).Where("status = ?", models.OrderStatusInProgress).Count(&stats.Active).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load queue"})
-		return
-	}
-	if err := h.DB.Model(&models.Order{}).Where("status = ?", models.OrderStatusDispatched).Count(&stats.Dispatched).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load queue"})
-		return
-	}
-	if err := h.DB.Model(&models.Order{}).
-		Where("status IN ? AND due_date < ?", queuePipelineStatuses, time.Now()).
-		Count(&stats.Delayed).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load queue"})
-		return
-	}
-
-	redactPriceList(c.MustGet(middleware.RoleKey), orders)
-	c.JSON(http.StatusOK, gin.H{"orders": orders, "stats": stats})
-}
-
 // Detail returns a single order (with items, creator, and assignee) owned by
 // the authenticated user.
 func (h *OrderHandler) Detail(c *gin.Context) {

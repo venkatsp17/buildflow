@@ -16,15 +16,10 @@ export function BottomTabBar() {
   const router = useRouter();
   const { user } = useAuth();
 
-  // Manufacturing's "Home" is the Production Queue, not a generic
-  // dashboard — the tab should read that way rather than say "Home".
-  const tabs =
-    user?.role === 'manufacturing'
-      ? [
-          { href: '/home', label: 'Queue', icon: 'file-tray-stacked-outline' as const },
-          ...DEFAULT_TABS.slice(1),
-        ]
-      : DEFAULT_TABS;
+  // Manufacturing has no separate landing dashboard — Orders (pre-filtered
+  // to Pending) is their one screen, so a Home tab pointing at the same
+  // place would just be a redundant second entry.
+  const tabs = user?.role === 'manufacturing' ? DEFAULT_TABS.slice(1) : DEFAULT_TABS;
 
   return (
     <View style={styles.bar}>

@@ -26,11 +26,10 @@ type StatusAction = {
 // orderStatusTransitions — each step needs its own confirmation, so an
 // approved order can't jump straight to dispatched, for example.
 //
-// pending has no entry here deliberately: Approve/Reject is exclusively a
-// Production Queue action (see ManufacturingHomeScreen), not something the
-// order detail page exposes — otherwise browsing to a pending order from
-// the general Orders list would offer the same decision outside the queue
-// workflow.
+// pending has no entry here deliberately: Approve/Reject shows as quick
+// actions directly on the pending order's card in the Orders list (see
+// orders/index.tsx), not on this detail page — no need to duplicate the
+// same decision in two places.
 const NEXT_STATUSES: Record<string, StatusAction[]> = {
   pending: [],
   approved: [

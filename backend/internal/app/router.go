@@ -40,7 +40,6 @@ func NewRouter(db *gorm.DB, jwtSecret string, corsAllowedOrigins []string) *gin.
 	orderGroup.GET("", orderHandler.List)
 	orderGroup.GET("/summary", orderHandler.Summary)
 	orderGroup.GET("/priority", orderHandler.Priority)
-	orderGroup.GET("/queue", middleware.RequireRole(string(models.RoleManufacturing), string(models.RoleManager)), orderHandler.Queue)
 	orderGroup.GET("/:id", orderHandler.Detail)
 	orderGroup.POST("", middleware.RequireRole(string(models.RoleSales)), orderHandler.Create)
 	orderGroup.PATCH("/:id/status", middleware.RequireRole(string(models.RoleManufacturing), string(models.RoleManager)), orderHandler.UpdateStatus)

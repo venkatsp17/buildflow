@@ -23,9 +23,12 @@ export function defaultDateFrom(): string {
 // order history grows. Only one page of orders is ever held in state at a
 // time, appended to via loadMore — never the full history at once.
 export function useOrdersList() {
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const [search, setSearch] = useState('');
-  const [status, setStatus] = useState('all');
+  // Manufacturing has no separate approval-inbox screen — Orders opens
+  // straight to Pending for them, since that's the only thing needing
+  // their attention; other roles see everything by default.
+  const [status, setStatus] = useState(user?.role === 'manufacturing' ? 'pending' : 'all');
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [dateFrom, setDateFrom] = useState(defaultDateFrom());
   const [dateTo, setDateTo] = useState('');

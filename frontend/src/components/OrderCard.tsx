@@ -24,43 +24,74 @@ function formatDate(dueDate: string): string {
   return dueDate.slice(0, 10);
 }
 
-export function OrderCard({ order, showPriceList = false }: { order: Order; showPriceList?: boolean }) {
+type Props = {
+  order: Order;
+  showPriceList?: boolean;
+  // When provided, renders a Reject/Approve action row below the card,
+  // outside the tap-to-open-detail Pressable so the two don't fight over
+  // the touch (used for manufacturing's pending orders on the Orders page).
+  onApprove?: () => void;
+  onReject?: () => void;
+};
+
+export function OrderCard({ order, showPriceList = false, onApprove, onReject }: Props) {
   const router = useRouter();
   const status = statusStyle[order.status] ?? statusStyle.pending;
   const urgency = urgencyStyle[order.urgency] ?? urgencyStyle.low;
+  const showActions = !!(onApprove || onReject);
 
   return (
-    <Pressable style={styles.card} onPress={() => router.push(`/orders/${order.id}` as never)}>
-      <View style={styles.topRow}>
-        <View style={styles.ticketRow}>
-          <Text style={styles.ticket}>{order.ticketNumber}</Text>
-          <View style={styles.cityPill}>
-            <Ionicons name="location-outline" size={11} color={colors.textMuted} />
-            <Text style={styles.cityText}>{order.city}</Text>
+    <View style={styles.card}>
+      <Pressable onPress={() => router.push(`/orders/${order.id}` as never)}>
+        <View style={styles.topRow}>
+          <View style={styles.ticketRow}>
+            <Text style={styles.ticket}>{order.ticketNumber}</Text>
+            <View style={styles.cityPill}>
+              <Ionicons name="location-outline" size={11} color={colors.textMuted} />
+              <Text style={styles.cityText}>{order.city}</Text>
+            </View>
+          </View>
+          <View style={[styles.badge, { backgroundColor: urgency.bg }]}>
+            <Text style={[styles.badgeText, { color: urgency.fg }]}>{urgency.label}</Text>
           </View>
         </View>
-        <View style={[styles.badge, { backgroundColor: urgency.bg }]}>
-          <Text style={[styles.badgeText, { color: urgency.fg }]}>{urgency.label}</Text>
-        </View>
-      </View>
 
-      <Text style={styles.clientName}>{order.clientName}</Text>
-      <Text style={styles.itemsSummary}>{formatItemsSummary(order)}</Text>
-      {showPriceList && <Text style={styles.priceList}>{order.priceListName}</Text>}
+        <Text style={styles.clientName}>{order.clientName}</Text>
+        <Text style={styles.itemsSummary}>{formatItemsSummary(order)}</Text>
+        {showPriceList && <Text style={styles.priceList}>{order.priceListName}</Text>}
 
-      <View style={styles.bottomRow}>
-        <View style={[styles.badge, { backgroundColor: status.bg }]}>
-          <Text style={[styles.badgeText, { color: status.fg }]}>{status.label}</Text>
-        </View>
-        <View style={styles.valueDateGroup}>
-          <Text style={styles.value}>{formatValue(order)}</Text>
-          <View style={styles.dateRow}>
-            <Ionicons name="calendar-outline" size={12} color={colors.textMuted} />
-            <Text style={styles.dateText}>{formatDate(order.dueDate)}</Text>
+        <View style={styles.bottomRow}>
+          <View style={[styles.badge, { backgroundColor: status.bg }]}>
+            <Text style={[styles.badgeText, { color: status.fg }]}>{status.label}</Text>
+          </View>
+          <View style={styles.valueDateGroup}>
+            <Text style={styles.value}>{formatValue(order)}</Text>
+            <View style={styles.dateRow}>
+              <Ionicons name="calendar-outline" size={12} color={colors.textMuted} />
+              <Text style={styles.dateText}>{formatDate(order.dueDate)}</Text>
+            </View>
           </View>
         </View>
-      </View>
-    </Pressable>
+      </Pressable>
+
+      {showActions && (
+        <>
+          <View style={styles.divider} />
+          <View style={styles.actionsRow}>
+            {onReject && (
+              <Pressable style={styles.rejectButton} onPress={onReject}>
+                <Text style={styles.rejectButtonText}>Reject</Text>
+              </Pressable>
+            )}
+            {onApprove && (
+              <Pressable style={styles.approveButton} onPress={onApprove}>
+                <Text style={styles.approveButtonText}>Approve</Text>
+              </Pressable>
+            )}
+          </View>
+        </>
+      )}
+    </View>
   );
 }
 
@@ -88,4 +119,21 @@ const styles = StyleSheet.create({
   value: { fontSize: 15, fontWeight: '700', color: colors.text },
   dateRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
   dateText: { fontSize: 12, color: colors.textMuted },
+  divider: { height: 1, backgroundColor: colors.border, marginTop: 12, marginBottom: 12 },
+  actionsRow: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8 },
+  approveButton: {
+    backgroundColor: colors.blue,
+    borderRadius: radius.sm,
+    paddingHorizontal: 18,
+    paddingVertical: 8,
+  },
+  approveButtonText: { color: '#FFFFFF', fontWeight: '700', fontSize: 13 },
+  rejectButton: {
+    borderWidth: 1,
+    borderColor: colors.red,
+    borderRadius: radius.sm,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  rejectButtonText: { color: colors.red, fontWeight: '700', fontSize: 13 },
 });
