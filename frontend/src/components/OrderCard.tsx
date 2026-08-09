@@ -32,13 +32,25 @@ type Props = {
   // the touch (used for manufacturing's pending orders on the Orders page).
   onApprove?: () => void;
   onReject?: () => void;
+  // Single advance-to-next-stage action (e.g. "Mark Dispatch Ready" for
+  // in_progress, "Mark Delivered" for dispatched) so those transitions
+  // don't require opening the detail page either.
+  onPrimaryAction?: () => void;
+  primaryActionLabel?: string;
 };
 
-export function OrderCard({ order, showPriceList = false, onApprove, onReject }: Props) {
+export function OrderCard({
+  order,
+  showPriceList = false,
+  onApprove,
+  onReject,
+  onPrimaryAction,
+  primaryActionLabel,
+}: Props) {
   const router = useRouter();
   const status = statusStyle[order.status] ?? statusStyle.pending;
   const urgency = urgencyStyle[order.urgency] ?? urgencyStyle.low;
-  const showActions = !!(onApprove || onReject);
+  const showActions = !!(onApprove || onReject || onPrimaryAction);
 
   return (
     <View style={styles.card}>
@@ -86,6 +98,11 @@ export function OrderCard({ order, showPriceList = false, onApprove, onReject }:
             {onApprove && (
               <Pressable style={styles.approveButton} onPress={onApprove}>
                 <Text style={styles.approveButtonText}>Approve</Text>
+              </Pressable>
+            )}
+            {onPrimaryAction && (
+              <Pressable style={styles.approveButton} onPress={onPrimaryAction}>
+                <Text style={styles.approveButtonText}>{primaryActionLabel}</Text>
               </Pressable>
             )}
           </View>

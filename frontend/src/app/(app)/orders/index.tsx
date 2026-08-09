@@ -121,6 +121,33 @@ export default function Orders() {
       requireReason: true,
     });
 
+  const askDispatchReady = (order: Order) =>
+    setPendingAction({
+      order,
+      targetStatus: 'dispatched',
+      title: 'Mark dispatch ready?',
+      message: `Mark ${order.ticketNumber} for ${order.clientName} as ready for dispatch?`,
+      confirmLabel: 'Mark Dispatch Ready',
+    });
+
+  const askMarkDelivered = (order: Order) =>
+    setPendingAction({
+      order,
+      targetStatus: 'delivered',
+      title: 'Mark delivered?',
+      message: `Mark ${order.ticketNumber} for ${order.clientName} as delivered? This completes the order.`,
+      confirmLabel: 'Mark Delivered',
+    });
+
+  // Single next-stage action per status — pending gets Approve/Reject
+  // instead, handled separately below.
+  function primaryActionFor(order: Order): { label: string; onPress: () => void } | undefined {
+    if (!canApprove) return undefined;
+    if (order.status === 'in_progress') return { label: 'Mark Dispatch Ready', onPress: () => askDispatchReady(order) };
+    if (order.status === 'dispatched') return { label: 'Mark Delivered', onPress: () => askMarkDelivered(order) };
+    return undefined;
+  }
+
   const handleConfirmAction = async (reason?: string) => {
     if (!token || !pendingAction) return;
     setIsSubmittingAction(true);
@@ -343,14 +370,19 @@ export default function Orders() {
         {!isLoading && orders.length === 0 && <Text style={styles.emptyText}>No orders found.</Text>}
 
         <View style={styles.cardsList}>
-          {orders.map((order) => (
-            <OrderCard
-              key={order.id}
-              order={order}
-              onApprove={canApprove && order.status === 'pending' ? () => askApprove(order) : undefined}
-              onReject={canApprove && order.status === 'pending' ? () => askReject(order) : undefined}
-            />
-          ))}
+          {orders.map((order) => {
+            const primaryAction = primaryActionFor(order);
+            return (
+              <OrderCard
+                key={order.id}
+                order={order}
+                onApprove={canApprove && order.status === 'pending' ? () => askApprove(order) : undefined}
+                onReject={canApprove && order.status === 'pending' ? () => askReject(order) : undefined}
+                onPrimaryAction={primaryAction?.onPress}
+                primaryActionLabel={primaryAction?.label}
+              />
+            );
+          })}
         </View>
 
         {!isLoading && hasMore && (
