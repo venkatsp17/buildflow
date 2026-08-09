@@ -197,6 +197,33 @@ export function getOrderSummary(token: string): Promise<OrderSummary> {
   });
 }
 
+export type RegionRevenue = {
+  region: string;
+  orders: number;
+  revenue: number;
+};
+
+export type ManagerDashboard = {
+  currency: string;
+  totalValue: number;
+  totalOrders: number;
+  regionCount: number;
+  inProgress: number;
+  delayed: number;
+  dispatchReady: number;
+  completed: number;
+  rejected: number;
+  revenueByRegion: RegionRevenue[];
+  // Mon..Sun order counts for the current calendar week.
+  weeklyOrders: number[];
+};
+
+export function getManagerDashboard(token: string): Promise<ManagerDashboard> {
+  return request<ManagerDashboard>('/orders/dashboard', {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
 export type CreateOrderInput = {
   clientName: string;
   city: string;

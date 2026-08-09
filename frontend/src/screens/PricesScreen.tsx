@@ -8,15 +8,8 @@ import { PriceListModal } from '@/components/PriceListModal';
 import { colors, radius } from '@/constants/theme';
 import { displayName } from '@/utils/format';
 
-function getGreeting(): string {
-  const hour = new Date().getHours();
-  if (hour < 12) return 'Good morning,';
-  if (hour < 17) return 'Good afternoon,';
-  return 'Good evening,';
-}
-
-export function ManagerHomeScreen() {
-  const { user, logout, token } = useAuth();
+export function PricesScreen() {
+  const { logout, token } = useAuth();
 
   const [priceLists, setPriceLists] = useState<PriceList[]>([]);
   const [salesUsers, setSalesUsers] = useState<User[]>([]);
@@ -98,8 +91,7 @@ export function ManagerHomeScreen() {
           </Pressable>
         </View>
 
-        <Text style={styles.greeting}>{getGreeting()}</Text>
-        <Text style={styles.userName}>{user ? displayName(user.email) : ''}</Text>
+        <Text style={styles.userName}>Prices</Text>
 
         {isLoading && <ActivityIndicator style={{ marginTop: 24 }} />}
         {error && <Text style={styles.error}>{error}</Text>}
@@ -219,8 +211,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  greeting: { fontSize: 14, color: colors.textMuted, marginTop: 20 },
-  userName: { fontSize: 22, fontWeight: '700', color: colors.text, marginTop: 2 },
+  userName: { fontSize: 22, fontWeight: '700', color: colors.text, marginTop: 20 },
   error: { color: colors.error, marginTop: 12 },
   emptyText: { color: colors.textMuted, marginTop: 8, textAlign: 'center' },
   sectionHeaderRow: {

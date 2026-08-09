@@ -22,6 +22,9 @@ export const colors = {
   greenMuted: '#E8F8EF',
   gray: '#8894AC',
   grayMuted: '#EEF0F3',
+  purple: '#9B51E0',
+  purpleMuted: '#F3E8FD',
+  teal: '#17A2B8',
 };
 
 export const statusStyle: Record<string, { bg: string; fg: string; label: string }> = {

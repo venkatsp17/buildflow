@@ -265,6 +265,111 @@ func (h *OrderHandler) Summary(c *gin.Context) {
 	c.JSON(http.StatusOK, summary)
 }
 
+// managerDashboardRegions is a fixed list of the regions the business
+// operates in, always shown on the manager dashboard (even at zero orders)
+// rather than derived from whatever cities happen to appear in the data —
+// matches the "Northern Emirates: 0 orders" row product wants visible from
+// day one, before any order has actually shipped there.
+var managerDashboardRegions = []string{"Dubai", "Abu Dhabi", "Sharjah", "Northern Emirates"}
+
+type regionRevenue struct {
+	Region  string  `json:"region"`
+	Orders  int64   `json:"orders"`
+	Revenue float64 `json:"revenue"`
+}
+
+type managerDashboard struct {
+	Currency        string          `json:"currency"`
+	TotalValue      float64         `json:"totalValue"`
+	TotalOrders     int64           `json:"totalOrders"`
+	RegionCount     int             `json:"regionCount"`
+	InProgress      int64           `json:"inProgress"`
+	Delayed         int64           `json:"delayed"`
+	DispatchReady   int64           `json:"dispatchReady"`
+	Completed       int64           `json:"completed"`
+	Rejected        int64           `json:"rejected"`
+	RevenueByRegion []regionRevenue `json:"revenueByRegion"`
+	WeeklyOrders    [7]int64        `json:"weeklyOrders"` // Mon..Sun, current calendar week
+}
+
+// ManagerDashboard returns company-wide aggregate stats across every sales
+// rep's orders (manager-only route — see managerOnly in router.go). Unlike
+// Summary (which scopes to the requesting sales rep), nothing here is
+// filtered by created_by_id.
+func (h *OrderHandler) ManagerDashboard(c *gin.Context) {
+	scoped := func() *gorm.DB { return h.DB.Model(&models.Order{}) }
+
+	dashboard := managerDashboard{Currency: "₹", RegionCount: len(managerDashboardRegions)}
+
+	if err := scoped().Count(&dashboard.TotalOrders).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load dashboard"})
+		return
+	}
+	if err := scoped().Select("COALESCE(SUM(value), 0)").Row().Scan(&dashboard.TotalValue); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load dashboard"})
+		return
+	}
+	if err := scoped().Where("status = ?", models.OrderStatusInProgress).Count(&dashboard.InProgress).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load dashboard"})
+		return
+	}
+	if err := scoped().
+		Where("status IN ? AND due_date < ?", []models.OrderStatus{models.OrderStatusApproved, models.OrderStatusInProgress, models.OrderStatusDispatched}, time.Now()).
+		Count(&dashboard.Delayed).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load dashboard"})
+		return
+	}
+	if err := scoped().Where("status = ?", models.OrderStatusDispatched).Count(&dashboard.DispatchReady).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load dashboard"})
+		return
+	}
+	if err := scoped().Where("status = ?", models.OrderStatusDelivered).Count(&dashboard.Completed).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load dashboard"})
+		return
+	}
+	if err := scoped().Where("status = ?", models.OrderStatusRejected).Count(&dashboard.Rejected).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load dashboard"})
+		return
+	}
+
+	dashboard.RevenueByRegion = make([]regionRevenue, len(managerDashboardRegions))
+	for i, region := range managerDashboardRegions {
+		rr := regionRevenue{Region: region}
+		row := scoped().Where("LOWER(city) = LOWER(?)", region)
+		if err := row.Count(&rr.Orders).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load dashboard"})
+			return
+		}
+		if err := scoped().Where("LOWER(city) = LOWER(?)", region).Select("COALESCE(SUM(value), 0)").Row().Scan(&rr.Revenue); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load dashboard"})
+			return
+		}
+		dashboard.RevenueByRegion[i] = rr
+	}
+
+	type weeklyRow struct {
+		Dow   int
+		Count int64
+	}
+	var weeklyRows []weeklyRow
+	if err := h.DB.Raw(`
+		SELECT EXTRACT(ISODOW FROM created_at)::int AS dow, COUNT(*) AS count
+		FROM orders
+		WHERE created_at >= date_trunc('week', now()) AND created_at < date_trunc('week', now()) + interval '7 days'
+		GROUP BY dow
+	`).Scan(&weeklyRows).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load dashboard"})
+		return
+	}
+	for _, row := range weeklyRows {
+		if row.Dow >= 1 && row.Dow <= 7 {
+			dashboard.WeeklyOrders[row.Dow-1] = row.Count
+		}
+	}
+
+	c.JSON(http.StatusOK, dashboard)
+}
+
 type orderItemRequest struct {
 	ProductName string `json:"productName" binding:"required"`
 	Description string `json:"description"`

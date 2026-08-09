@@ -11,6 +11,16 @@ const DEFAULT_TABS = [
   { href: '/profile', label: 'Profile', icon: 'person-outline' as const },
 ];
 
+// Manager works across the whole order pipeline (not just their own orders)
+// plus pricing admin, so their tabs swap Home/Profile for a dedicated
+// Dashboard and a Prices tab rather than reusing the generic set.
+const MANAGER_TABS = [
+  { href: '/home', label: 'Dashboard', icon: 'grid-outline' as const },
+  { href: '/orders', label: 'Orders', icon: 'clipboard-outline' as const },
+  { href: '/prices', label: 'Prices', icon: 'pricetag-outline' as const },
+  { href: '/alerts', label: 'Alerts', icon: 'notifications-outline' as const },
+];
+
 export function BottomTabBar() {
   const pathname = usePathname();
   const router = useRouter();
@@ -19,7 +29,8 @@ export function BottomTabBar() {
   // Manufacturing has no separate landing dashboard — Orders (pre-filtered
   // to Pending) is their one screen, so a Home tab pointing at the same
   // place would just be a redundant second entry.
-  const tabs = user?.role === 'manufacturing' ? DEFAULT_TABS.slice(1) : DEFAULT_TABS;
+  const tabs =
+    user?.role === 'manufacturing' ? DEFAULT_TABS.slice(1) : user?.role === 'manager' ? MANAGER_TABS : DEFAULT_TABS;
 
   return (
     <View style={styles.bar}>

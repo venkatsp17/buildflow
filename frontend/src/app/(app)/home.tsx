@@ -2,7 +2,7 @@ import { Redirect } from 'expo-router';
 
 import { useAuth } from '@/auth/AuthContext';
 import { GenericHomeScreen } from '@/screens/GenericHomeScreen';
-import { ManagerHomeScreen } from '@/screens/ManagerHomeScreen';
+import { ManagerDashboardScreen } from '@/screens/ManagerDashboardScreen';
 import { SalesHomeScreen } from '@/screens/SalesHomeScreen';
 
 export default function Home() {
@@ -13,7 +13,7 @@ export default function Home() {
   }
 
   if (user?.role === 'manager') {
-    return <ManagerHomeScreen />;
+    return <ManagerDashboardScreen />;
   }
 
   // Manufacturing has no separate landing dashboard — Orders (pre-filtered
