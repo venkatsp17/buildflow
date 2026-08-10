@@ -4,6 +4,9 @@ backend/*.exe
 backend/bin/
 backend/.env
 backend/.aws-sam/
+# sam deploy --guided persists --parameter-overrides here, including the
+# plaintext Supabase DatabaseUrl — never commit it.
+backend/samconfig.toml
 
 # Frontend (Expo / Node)
 frontend/node_modules/

@@ -1,17 +1,17 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
-Description: Tracker backend — Gin API on Lambda behind an HTTP API, RDS Postgres via RDS Proxy.
+Description: Tracker backend — Gin API on Lambda behind an HTTP API, Postgres via Supabase.
 
 Parameters:
-  DBUsername:
+  DatabaseUrl:
     Type: String
-    Default: tracker
-  VpcId:
-    Type: AWS::EC2::VPC::Id
-    Description: VPC to deploy the Lambda, RDS instance, and RDS Proxy into.
-  PrivateSubnetIds:
-    Type: List<AWS::EC2::Subnet::Id>
-    Description: Private subnets (at least two, in different AZs) for the Lambda, RDS instance, and RDS Proxy.
+    NoEcho: true
+    Description: >
+      Supabase pooled Postgres connection string (Session/Transaction pooler,
+      port 6543 — not the direct :5432 connection), e.g.
+      postgres://postgres.<ref>:<password>@aws-0-<region>.pooler.supabase.com:6543/postgres?sslmode=require.
+      Passed at deploy time (sam deploy --parameter-overrides DatabaseUrl=...),
+      never committed to source control.
 
 Globals:
   Function:
@@ -22,16 +22,6 @@ Globals:
 
 Resources:
   # --- Secrets -----------------------------------------------------------
-  DBSecret:
-    Type: AWS::SecretsManager::Secret
-    Properties:
-      Description: RDS Postgres master credentials
-      GenerateSecretString:
-        SecretStringTemplate: !Sub '{"username":"${DBUsername}"}'
-        GenerateStringKey: password
-        PasswordLength: 32
-        ExcludeCharacters: '"@/\'
-
   JWTSecret:
     Type: AWS::SecretsManager::Secret
     Properties:
@@ -39,85 +29,6 @@ Resources:
       GenerateSecretString:
         PasswordLength: 48
         ExcludePunctuation: true
-
-  # --- Networking ----------------------------------------------------------
-  LambdaSecurityGroup:
-    Type: AWS::EC2::SecurityGroup
-    Properties:
-      GroupDescription: Tracker Lambda security group
-      VpcId: !Ref VpcId
-
-  DBSecurityGroup:
-    Type: AWS::EC2::SecurityGroup
-    Properties:
-      GroupDescription: Tracker RDS + RDS Proxy security group
-      VpcId: !Ref VpcId
-      SecurityGroupIngress:
-        - IpProtocol: tcp
-          FromPort: 5432
-          ToPort: 5432
-          SourceSecurityGroupId: !Ref LambdaSecurityGroup
-
-  # --- Database --------------------------------------------------------
-  DBInstance:
-    Type: AWS::RDS::DBInstance
-    DeletionPolicy: Snapshot
-    Properties:
-      Engine: postgres
-      EngineVersion: '16'
-      DBInstanceClass: db.t4g.micro
-      AllocatedStorage: '20'
-      DBName: tracker
-      MasterUsername: !Sub '{{resolve:secretsmanager:${DBSecret}:SecretString:username}}'
-      MasterUserPassword: !Sub '{{resolve:secretsmanager:${DBSecret}:SecretString:password}}'
-      VPCSecurityGroups: [!Ref DBSecurityGroup]
-      DBSubnetGroupName: !Ref DBSubnetGroup
-      PubliclyAccessible: false
-      BackupRetentionPeriod: 7
-
-  DBSubnetGroup:
-    Type: AWS::RDS::DBSubnetGroup
-    Properties:
-      DBSubnetGroupDescription: Private subnets for Tracker RDS
-      SubnetIds: !Ref PrivateSubnetIds
-
-  DBProxyRole:
-    Type: AWS::IAM::Role
-    Properties:
-      AssumeRolePolicyDocument:
-        Version: '2012-10-17'
-        Statement:
-          - Effect: Allow
-            Principal: { Service: rds.amazonaws.com }
-            Action: sts:AssumeRole
-      Policies:
-        - PolicyName: ReadDBSecret
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Action: secretsmanager:GetSecretValue
-                Resource: !Ref DBSecret
-
-  DBProxy:
-    Type: AWS::RDS::DBProxy
-    Properties:
-      DBProxyName: tracker-db-proxy
-      EngineFamily: POSTGRESQL
-      RoleArn: !GetAtt DBProxyRole.Arn
-      VpcSubnetIds: !Ref PrivateSubnetIds
-      VpcSecurityGroupIds: [!Ref DBSecurityGroup]
-      Auth:
-        - AuthScheme: SECRETS
-          SecretArn: !Ref DBSecret
-          IAMAuth: DISABLED
-
-  DBProxyTargetGroup:
-    Type: AWS::RDS::DBProxyTargetGroup
-    Properties:
-      DBProxyName: !Ref DBProxy
-      DBInstanceIdentifiers: [!Ref DBInstance]
-      TargetGroupName: default
 
   # --- API ---------------------------------------------------------------
   HttpApi:
@@ -134,15 +45,13 @@ Resources:
       Handler: bootstrap
       Environment:
         Variables:
-          DATABASE_URL: !Sub
-            - 'postgres://${Username}:${Password}@${ProxyEndpoint}:5432/tracker?sslmode=require'
-            - Username: !Sub '{{resolve:secretsmanager:${DBSecret}:SecretString:username}}'
-              Password: !Sub '{{resolve:secretsmanager:${DBSecret}:SecretString:password}}'
-              ProxyEndpoint: !GetAtt DBProxy.Endpoint
+          DATABASE_URL: !Ref DatabaseUrl
           JWT_SECRET: !Sub '{{resolve:secretsmanager:${JWTSecret}}}'
-      VpcConfig:
-        SecurityGroupIds: [!Ref LambdaSecurityGroup]
-        SubnetIds: !Ref PrivateSubnetIds
+      # No VpcConfig: the function isn't in a VPC, so it needs no NAT
+      # Gateway to reach Supabase or any other public HTTPS endpoint
+      # (geocoding included) — the tradeoff is Supabase must be reachable
+      # over the public internet rather than network-isolated, so it
+      # relies on TLS + the pooler's own auth rather than a security group.
       Events:
         Proxy:
           Type: HttpApi
