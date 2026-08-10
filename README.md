@@ -31,6 +31,11 @@ Monorepo base setup:
 
 ## Deploying the backend (AWS Lambda via SAM)
 
+**First, a one-time IAM bootstrap** (needs your root/admin session): see
+[`backend/iam/README.md`](backend/iam/README.md). It creates a scoped deploy
+user (and the CloudFormation execution role it's allowed to hand off) so
+routine deploys never need root credentials again.
+
 Database is [Supabase](https://supabase.com) Postgres, not RDS — create a free
 project there first, then grab the **pooled** connection string (Connection
 Pooling → Transaction mode, port `6543`, not the direct `:5432` one) from
@@ -39,10 +44,10 @@ Project Settings → Database.
 ```
 cd backend
 sam build
-sam deploy --guided --parameter-overrides DatabaseUrl='postgres://...:6543/postgres?sslmode=require'   # first time only; creates samconfig.toml
+sam deploy --guided --profile buildflow-deploy --parameter-overrides DatabaseUrl='postgres://...:6543/postgres?sslmode=require'   # first time only; creates samconfig.toml
 ```
 
-Subsequent deploys: `sam deploy` (the `DatabaseUrl` override is remembered in `samconfig.toml` — avoid committing that file if it captures the connection string in plaintext; keep it in `.gitignore` or pass `--parameter-overrides` explicitly each time instead).
+Subsequent deploys: `sam deploy --profile buildflow-deploy` (the `DatabaseUrl` override is remembered in `samconfig.toml` — avoid committing that file if it captures the connection string in plaintext; keep it in `.gitignore` or pass `--parameter-overrides` explicitly each time instead).
 
 `template.yaml` provisions: the Lambda function (no VPC — it talks to Supabase over the public internet via TLS, so no NAT Gateway is needed either), an HTTP API in front of it, and a Secrets Manager secret holding the JWT signing key. See comments in `backend/template.yaml` for details.
 
