@@ -139,6 +139,15 @@ export function PricesScreen() {
     load();
   };
 
+  // Single FAB (always reachable regardless of scroll position, unlike a
+  // button buried at the end of a growing list) whose action follows
+  // whichever tab is active.
+  const handleFabPress = () => {
+    if (activeTab === 'priceLists') openCreateList();
+    else if (activeTab === 'products') setIsCreateProductOpen(true);
+    else setIsCreateUserOpen(true);
+  };
+
   const handleConfirmProductActiveChange = async () => {
     if (!token || !confirmingProductDisable) return;
     setIsSubmittingProductActive(true);
@@ -209,11 +218,6 @@ export function PricesScreen() {
             ))}
 
             {priceLists.length === 0 && <Text style={styles.emptyText}>No price lists yet.</Text>}
-
-            <Pressable style={styles.addButton} onPress={openCreateList}>
-              <Ionicons name="add" size={18} color={colors.navy} />
-              <Text style={styles.addButtonText}>New Price List</Text>
-            </Pressable>
           </>
         )}
 
@@ -244,13 +248,6 @@ export function PricesScreen() {
             ))}
 
             {products.length === 0 && <Text style={styles.emptyText}>No products yet.</Text>}
-
-            {isSuperUser && (
-              <Pressable style={styles.addButton} onPress={() => setIsCreateProductOpen(true)}>
-                <Ionicons name="add" size={18} color={colors.navy} />
-                <Text style={styles.addButtonText}>New Product</Text>
-              </Pressable>
-            )}
           </>
         )}
 
@@ -289,14 +286,15 @@ export function PricesScreen() {
             ))}
 
             {users.length === 0 && <Text style={styles.emptyText}>No users yet.</Text>}
-
-            <Pressable style={styles.addButton} onPress={() => setIsCreateUserOpen(true)}>
-              <Ionicons name="add" size={18} color={colors.navy} />
-              <Text style={styles.addButtonText}>New User</Text>
-            </Pressable>
           </>
         )}
       </ScrollView>
+
+      {(activeTab !== 'products' || isSuperUser) && (
+        <Pressable style={styles.fab} onPress={handleFabPress}>
+          <Ionicons name="add" size={26} color="#FFFFFF" />
+        </Pressable>
+      )}
 
       <PriceListModal
         visible={isPriceListModalOpen}
@@ -434,7 +432,7 @@ export function PricesScreen() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.background },
-  content: { padding: 20, paddingBottom: 60 },
+  content: { padding: 20, paddingBottom: 100 },
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   brandRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   logo: {
@@ -504,19 +502,22 @@ const styles = StyleSheet.create({
   disabledPillText: { fontSize: 10, fontWeight: '700', color: colors.red },
   superUserPill: { backgroundColor: colors.amberMuted, borderRadius: 20, paddingHorizontal: 8, paddingVertical: 2 },
   superUserPillText: { fontSize: 10, fontWeight: '700', color: colors.navy },
-  addButton: {
-    flexDirection: 'row',
+  fab: {
+    position: 'absolute',
+    right: 20,
+    bottom: 20,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: colors.amber,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderStyle: 'dashed',
-    borderRadius: radius.md,
-    paddingVertical: 12,
-    marginBottom: 4,
+    shadowColor: '#000',
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 4,
   },
-  addButtonText: { fontSize: 13, color: colors.navy, fontWeight: '600' },
   overlay: {
     position: 'absolute',
     top: 0,
