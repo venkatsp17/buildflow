@@ -22,9 +22,18 @@ import { StatusActionModal } from '@/components/StatusActionModal';
 import { colors, radius } from '@/constants/theme';
 import { roleLabel } from '@/constants/roles';
 
+type Tab = 'priceLists' | 'products' | 'users';
+
+const TABS: { key: Tab; label: string }[] = [
+  { key: 'priceLists', label: 'Price Lists' },
+  { key: 'products', label: 'Products' },
+  { key: 'users', label: 'Users' },
+];
+
 export function PricesScreen() {
   const { logout, token, user: currentUser } = useAuth();
 
+  const [activeTab, setActiveTab] = useState<Tab>('priceLists');
   const [priceLists, setPriceLists] = useState<PriceList[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -162,15 +171,29 @@ export function PricesScreen() {
 
         <Text style={styles.userName}>Prices</Text>
 
+        <View style={styles.tabBar}>
+          {TABS.map((tab) => {
+            const active = tab.key === activeTab;
+            return (
+              <Pressable
+                key={tab.key}
+                style={[styles.tabItem, active && styles.tabItemActive]}
+                onPress={() => setActiveTab(tab.key)}
+              >
+                <Text style={[styles.tabItemText, active && styles.tabItemTextActive]}>{tab.label}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+
         {isLoading && <ActivityIndicator style={{ marginTop: 24 }} />}
         {error && <Text style={styles.error}>{error}</Text>}
 
-        {!isLoading && (
+        {!isLoading && activeTab === 'priceLists' && (
           <>
-            <View style={styles.sectionHeaderRow}>
-              <Text style={styles.sectionTitle}>Price Lists</Text>
-              <Text style={styles.sectionCount}>{priceLists.length}</Text>
-            </View>
+            <Text style={styles.tabCount}>
+              {priceLists.length} price list{priceLists.length === 1 ? '' : 's'}
+            </Text>
 
             {priceLists.map((list) => (
               <Pressable key={list.id} style={styles.card} onPress={() => openEditList(list)}>
@@ -185,15 +208,20 @@ export function PricesScreen() {
               </Pressable>
             ))}
 
+            {priceLists.length === 0 && <Text style={styles.emptyText}>No price lists yet.</Text>}
+
             <Pressable style={styles.addButton} onPress={openCreateList}>
               <Ionicons name="add" size={18} color={colors.navy} />
               <Text style={styles.addButtonText}>New Price List</Text>
             </Pressable>
+          </>
+        )}
 
-            <View style={styles.sectionHeaderRow}>
-              <Text style={styles.sectionTitle}>Products</Text>
-              <Text style={styles.sectionCount}>{products.length}</Text>
-            </View>
+        {!isLoading && activeTab === 'products' && (
+          <>
+            <Text style={styles.tabCount}>
+              {products.length} product{products.length === 1 ? '' : 's'}
+            </Text>
 
             {products.map((product) => (
               <Pressable key={product.id} style={styles.card} onPress={() => setManagingProduct(product)}>
@@ -223,11 +251,14 @@ export function PricesScreen() {
                 <Text style={styles.addButtonText}>New Product</Text>
               </Pressable>
             )}
+          </>
+        )}
 
-            <View style={styles.sectionHeaderRow}>
-              <Text style={styles.sectionTitle}>Team</Text>
-              <Text style={styles.sectionCount}>{users.length}</Text>
-            </View>
+        {!isLoading && activeTab === 'users' && (
+          <>
+            <Text style={styles.tabCount}>
+              {users.length} user{users.length === 1 ? '' : 's'}
+            </Text>
 
             {users.map((teamUser) => (
               <Pressable key={teamUser.id} style={styles.card} onPress={() => setManagingUser(teamUser)}>
@@ -426,17 +457,25 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   userName: { fontSize: 22, fontWeight: '700', color: colors.text, marginTop: 20 },
+  tabBar: {
+    flexDirection: 'row',
+    marginTop: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  tabItem: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: 2,
+    borderBottomColor: 'transparent',
+  },
+  tabItemActive: { borderBottomColor: colors.navy },
+  tabItemText: { fontSize: 14, fontWeight: '600', color: colors.textMuted },
+  tabItemTextActive: { color: colors.navy },
   error: { color: colors.error, marginTop: 12 },
   emptyText: { color: colors.textMuted, marginTop: 8, textAlign: 'center' },
-  sectionHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 28,
-    marginBottom: 10,
-  },
-  sectionTitle: { fontSize: 16, fontWeight: '700', color: colors.text },
-  sectionCount: { fontSize: 13, color: colors.amber, fontWeight: '600' },
+  tabCount: { fontSize: 13, color: colors.textMuted, fontWeight: '600', marginTop: 16, marginBottom: 10 },
   card: {
     flexDirection: 'row',
     alignItems: 'center',
