@@ -18,9 +18,17 @@ identities get created:
 Requires the AWS CLI, authenticated as root (or an admin) for this bootstrap
 only.
 
+Region is fixed to **`ap-south-1` (Mumbai)** in the policy files already —
+that's the only AWS region Supabase offers in/near India, so Lambda deploys
+there too (same-region Lambda↔Supabase avoids paying cross-region latency on
+every DB-touching request, which matters far more than the small extra hop
+from Mumbai to South India for the app's own users). If you ever redeploy to
+a different region, re-run the `sed` substitution below with the new value
+first.
+
 ```bash
 # --- 0. Pick your values ---------------------------------------------------
-export AWS_REGION=us-east-1              # wherever you want to deploy
+export AWS_REGION=ap-south-1             # Mumbai — matches Supabase's only Indian region
 export STACK_NAME=buildflow-backend      # must match what you pass to `sam deploy --stack-name`
 export ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 
@@ -32,10 +40,11 @@ cd backend/iam
 # permissions-policy.json's Resource ARNs to match before step 4.
 aws s3 mb "s3://${STACK_NAME}-sam-artifacts" --region "$AWS_REGION"
 
-# --- 2. Fill in the policy templates ----------------------------------------
-sed -e "s/REGION/$AWS_REGION/g" -e "s/ACCOUNT_ID/$ACCOUNT_ID/g" -e "s/STACK_NAME/$STACK_NAME/g" \
+# --- 2. Fill in the policy templates (region is already ap-south-1 in the
+# files; this just substitutes your account ID and chosen stack name) ------
+sed -e "s/ACCOUNT_ID/$ACCOUNT_ID/g" -e "s/STACK_NAME/$STACK_NAME/g" \
   cfn-execution-permissions-policy.json > /tmp/cfn-execution-permissions-policy.json
-sed -e "s/REGION/$AWS_REGION/g" -e "s/ACCOUNT_ID/$ACCOUNT_ID/g" -e "s/STACK_NAME/$STACK_NAME/g" \
+sed -e "s/ACCOUNT_ID/$ACCOUNT_ID/g" -e "s/STACK_NAME/$STACK_NAME/g" \
   deploy-user-permissions-policy.json > /tmp/deploy-user-permissions-policy.json
 
 # --- 3. CloudFormation execution role ---------------------------------------
@@ -65,7 +74,7 @@ personal credentials untouched):
 
 ```bash
 aws configure --profile buildflow-deploy
-# AccessKeyId / SecretAccessKey from step 5, region = $AWS_REGION, output = json
+# AccessKeyId / SecretAccessKey from step 5, region = ap-south-1, output = json
 ```
 
 From then on, every deploy uses that profile and passes the execution role
@@ -76,6 +85,7 @@ cd backend
 sam build
 sam deploy --guided \
   --profile buildflow-deploy \
+  --region ap-south-1 \
   --stack-name buildflow-backend \
   --s3-bucket buildflow-backend-sam-artifacts \
   --role-arn arn:aws:iam::<ACCOUNT_ID>:role/buildflow-backend-cfn-exec-role \

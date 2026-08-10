@@ -37,14 +37,16 @@ user (and the CloudFormation execution role it's allowed to hand off) so
 routine deploys never need root credentials again.
 
 Database is [Supabase](https://supabase.com) Postgres, not RDS — create a free
-project there first, then grab the **pooled** connection string (Connection
-Pooling → Transaction mode, port `6543`, not the direct `:5432` one) from
-Project Settings → Database.
+project there first (region: **Mumbai, `ap-south-1`** — same region the
+Lambda deploys to below, and the only one Supabase offers in/near India),
+then grab the **pooled** connection string (Connection Pooling → Transaction
+mode, port `6543`, not the direct `:5432` one) from Project Settings →
+Database.
 
 ```
 cd backend
 sam build
-sam deploy --guided --profile buildflow-deploy --parameter-overrides DatabaseUrl='postgres://...:6543/postgres?sslmode=require'   # first time only; creates samconfig.toml
+sam deploy --guided --profile buildflow-deploy --region ap-south-1 --parameter-overrides DatabaseUrl='postgres://...:6543/postgres?sslmode=require'   # first time only; creates samconfig.toml
 ```
 
 Subsequent deploys: `sam deploy --profile buildflow-deploy` (the `DatabaseUrl` override is remembered in `samconfig.toml` — avoid committing that file if it captures the connection string in plaintext; keep it in `.gitignore` or pass `--parameter-overrides` explicitly each time instead).

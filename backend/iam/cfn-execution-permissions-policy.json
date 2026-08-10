@@ -19,7 +19,7 @@
         "lambda:ListVersionsByFunction",
         "lambda:PublishVersion"
       ],
-      "Resource": "arn:aws:lambda:REGION:ACCOUNT_ID:function:STACK_NAME-*"
+      "Resource": "arn:aws:lambda:ap-south-1:ACCOUNT_ID:function:STACK_NAME-*"
     },
     {
       "Sid": "LambdaExecutionRole",
@@ -52,7 +52,7 @@
         "secretsmanager:UntagResource",
         "secretsmanager:GetRandomPassword"
       ],
-      "Resource": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:STACK_NAME-*"
+      "Resource": "arn:aws:secretsmanager:ap-south-1:ACCOUNT_ID:secret:STACK_NAME-*"
     },
     {
       "Sid": "LambdaLogs",
@@ -64,7 +64,7 @@
         "logs:TagResource",
         "logs:DescribeLogGroups"
       ],
-      "Resource": "arn:aws:logs:REGION:ACCOUNT_ID:log-group:/aws/lambda/STACK_NAME-*"
+      "Resource": "arn:aws:logs:ap-south-1:ACCOUNT_ID:log-group:/aws/lambda/STACK_NAME-*"
     },
     {
       "Sid": "HttpApi",
@@ -79,8 +79,8 @@
         "apigateway:UntagResource"
       ],
       "Resource": [
-        "arn:aws:apigateway:REGION::/apis",
-        "arn:aws:apigateway:REGION::/apis/*"
+        "arn:aws:apigateway:ap-south-1::/apis",
+        "arn:aws:apigateway:ap-south-1::/apis/*"
       ]
     }
   ]

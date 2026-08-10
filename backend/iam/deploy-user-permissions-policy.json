@@ -21,8 +21,8 @@
         "cloudformation:ListChangeSets"
       ],
       "Resource": [
-        "arn:aws:cloudformation:REGION:ACCOUNT_ID:stack/STACK_NAME/*",
-        "arn:aws:cloudformation:REGION:ACCOUNT_ID:stack/STACK_NAME*/*"
+        "arn:aws:cloudformation:ap-south-1:ACCOUNT_ID:stack/STACK_NAME/*",
+        "arn:aws:cloudformation:ap-south-1:ACCOUNT_ID:stack/STACK_NAME*/*"
       ]
     },
     {
@@ -62,7 +62,7 @@
       "Sid": "ReadOwnFunctionForLocalTesting",
       "Effect": "Allow",
       "Action": ["lambda:GetFunction", "lambda:InvokeFunction"],
-      "Resource": "arn:aws:lambda:REGION:ACCOUNT_ID:function:STACK_NAME-*"
+      "Resource": "arn:aws:lambda:ap-south-1:ACCOUNT_ID:function:STACK_NAME-*"
     }
   ]
 }
