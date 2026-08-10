@@ -23,56 +23,62 @@ that's the only AWS region Supabase offers in/near India, so Lambda deploys
 there too (same-region Lambda↔Supabase avoids paying cross-region latency on
 every DB-touching request, which matters far more than the small extra hop
 from Mumbai to South India for the app's own users). If you ever redeploy to
-a different region, re-run the `sed` substitution below with the new value
-first.
+a different region, edit the two `*-permissions-policy.json` files first (a
+find-and-replace of `ap-south-1` is all they need).
 
-```bash
+## Windows (PowerShell)
+
+```powershell
 # --- 0. Pick your values ---------------------------------------------------
-export AWS_REGION=ap-south-1             # Mumbai — matches Supabase's only Indian region
-export STACK_NAME=buildflow-backend      # must match what you pass to `sam deploy --stack-name`
-export ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+$env:AWS_REGION = "ap-south-1"             # Mumbai — matches Supabase's only Indian region
+$env:STACK_NAME = "buildflow-backend"      # must match what you pass to `sam deploy --stack-name`
+$env:ACCOUNT_ID = (aws sts get-caller-identity --query Account --output text).Trim()
 
-cd backend/iam
+Set-Location backend/iam
 
 # --- 1. S3 bucket for SAM's uploaded deployment packages -------------------
 # Bucket names are globally unique across ALL of AWS, not just your account —
 # if this exact name is taken, add a random suffix and update deploy-user-
 # permissions-policy.json's Resource ARNs to match before step 4.
-aws s3 mb "s3://${STACK_NAME}-sam-artifacts" --region "$AWS_REGION"
+aws s3 mb "s3://$($env:STACK_NAME)-sam-artifacts" --region $env:AWS_REGION
 
 # --- 2. Fill in the policy templates (region is already ap-south-1 in the
-# files; this just substitutes your account ID and chosen stack name) ------
-sed -e "s/ACCOUNT_ID/$ACCOUNT_ID/g" -e "s/STACK_NAME/$STACK_NAME/g" \
-  cfn-execution-permissions-policy.json > /tmp/cfn-execution-permissions-policy.json
-sed -e "s/ACCOUNT_ID/$ACCOUNT_ID/g" -e "s/STACK_NAME/$STACK_NAME/g" \
-  deploy-user-permissions-policy.json > /tmp/deploy-user-permissions-policy.json
+# files; this just substitutes your account ID and chosen stack name) — the
+# .filled.json files are local scratch files, already gitignored. --------
+(Get-Content cfn-execution-permissions-policy.json) `
+  -replace 'ACCOUNT_ID', $env:ACCOUNT_ID -replace 'STACK_NAME', $env:STACK_NAME |
+  Set-Content -Encoding utf8 cfn-execution-permissions-policy.filled.json
+
+(Get-Content deploy-user-permissions-policy.json) `
+  -replace 'ACCOUNT_ID', $env:ACCOUNT_ID -replace 'STACK_NAME', $env:STACK_NAME |
+  Set-Content -Encoding utf8 deploy-user-permissions-policy.filled.json
 
 # --- 3. CloudFormation execution role ---------------------------------------
-aws iam create-role \
-  --role-name "${STACK_NAME}-cfn-exec-role" \
+aws iam create-role `
+  --role-name "$($env:STACK_NAME)-cfn-exec-role" `
   --assume-role-policy-document file://cfn-execution-trust-policy.json
 
-aws iam put-role-policy \
-  --role-name "${STACK_NAME}-cfn-exec-role" \
-  --policy-name "${STACK_NAME}-cfn-exec-permissions" \
-  --policy-document file:///tmp/cfn-execution-permissions-policy.json
+aws iam put-role-policy `
+  --role-name "$($env:STACK_NAME)-cfn-exec-role" `
+  --policy-name "$($env:STACK_NAME)-cfn-exec-permissions" `
+  --policy-document file://cfn-execution-permissions-policy.filled.json
 
 # --- 4. The deploy user itself -----------------------------------------------
-aws iam create-user --user-name "${STACK_NAME}-deployer"
+aws iam create-user --user-name "$($env:STACK_NAME)-deployer"
 
-aws iam put-user-policy \
-  --user-name "${STACK_NAME}-deployer" \
-  --policy-name "${STACK_NAME}-deploy-permissions" \
-  --policy-document file:///tmp/deploy-user-permissions-policy.json
+aws iam put-user-policy `
+  --user-name "$($env:STACK_NAME)-deployer" `
+  --policy-name "$($env:STACK_NAME)-deploy-permissions" `
+  --policy-document file://deploy-user-permissions-policy.filled.json
 
 # --- 5. Access keys — printed ONCE, save immediately somewhere safe ---------
-aws iam create-access-key --user-name "${STACK_NAME}-deployer"
+aws iam create-access-key --user-name "$($env:STACK_NAME)-deployer"
 ```
 
 Then set those keys up as a named profile (not your default — keeps root/
 personal credentials untouched):
 
-```bash
+```powershell
 aws configure --profile buildflow-deploy
 # AccessKeyId / SecretAccessKey from step 5, region = ap-south-1, output = json
 ```
@@ -80,7 +86,59 @@ aws configure --profile buildflow-deploy
 From then on, every deploy uses that profile and passes the execution role
 explicitly — never root, never an admin identity:
 
+```powershell
+Set-Location ../..   # back to repo root, then into backend
+Set-Location backend
+sam build
+sam deploy --guided `
+  --profile buildflow-deploy `
+  --region ap-south-1 `
+  --stack-name buildflow-backend `
+  --s3-bucket buildflow-backend-sam-artifacts `
+  --role-arn arn:aws:iam::<ACCOUNT_ID>:role/buildflow-backend-cfn-exec-role `
+  --capabilities CAPABILITY_IAM `
+  --parameter-overrides DatabaseUrl='postgres://...:6543/postgres?sslmode=require'
+```
+
+## macOS / Linux / WSL / Git Bash
+
+Same steps, bash syntax:
+
 ```bash
+export AWS_REGION=ap-south-1
+export STACK_NAME=buildflow-backend
+export ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+
+cd backend/iam
+
+aws s3 mb "s3://${STACK_NAME}-sam-artifacts" --region "$AWS_REGION"
+
+sed -e "s/ACCOUNT_ID/$ACCOUNT_ID/g" -e "s/STACK_NAME/$STACK_NAME/g" \
+  cfn-execution-permissions-policy.json > cfn-execution-permissions-policy.filled.json
+sed -e "s/ACCOUNT_ID/$ACCOUNT_ID/g" -e "s/STACK_NAME/$STACK_NAME/g" \
+  deploy-user-permissions-policy.json > deploy-user-permissions-policy.filled.json
+
+aws iam create-role \
+  --role-name "${STACK_NAME}-cfn-exec-role" \
+  --assume-role-policy-document file://cfn-execution-trust-policy.json
+
+aws iam put-role-policy \
+  --role-name "${STACK_NAME}-cfn-exec-role" \
+  --policy-name "${STACK_NAME}-cfn-exec-permissions" \
+  --policy-document file://cfn-execution-permissions-policy.filled.json
+
+aws iam create-user --user-name "${STACK_NAME}-deployer"
+
+aws iam put-user-policy \
+  --user-name "${STACK_NAME}-deployer" \
+  --policy-name "${STACK_NAME}-deploy-permissions" \
+  --policy-document file://deploy-user-permissions-policy.filled.json
+
+aws iam create-access-key --user-name "${STACK_NAME}-deployer"
+```
+
+```bash
+aws configure --profile buildflow-deploy
 cd backend
 sam build
 sam deploy --guided \
@@ -92,6 +150,8 @@ sam deploy --guided \
   --capabilities CAPABILITY_IAM \
   --parameter-overrides DatabaseUrl='postgres://...:6543/postgres?sslmode=require'
 ```
+
+---
 
 `--guided` saves all of the above (profile, role-arn, bucket, capabilities)
 into `samconfig.toml` — later deploys just need `sam deploy --profile buildflow-deploy`.
