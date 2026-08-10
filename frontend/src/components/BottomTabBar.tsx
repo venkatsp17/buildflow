@@ -19,7 +19,7 @@ const DEFAULT_TABS = [
 const MANAGER_TABS = [
   { href: '/home', label: 'Dashboard', icon: 'grid-outline' as const },
   { href: '/orders', label: 'Orders', icon: 'clipboard-outline' as const },
-  { href: '/prices', label: 'Prices', icon: 'pricetag-outline' as const },
+  { href: '/prices', label: 'Manage', icon: 'settings-outline' as const },
 ];
 
 export function BottomTabBar() {

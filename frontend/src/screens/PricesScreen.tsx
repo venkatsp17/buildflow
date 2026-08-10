@@ -178,7 +178,7 @@ export function PricesScreen() {
           </Pressable>
         </View>
 
-        <Text style={styles.userName}>Prices</Text>
+        <Text style={styles.userName}>Manage</Text>
 
         <View style={styles.tabBar}>
           {TABS.map((tab) => {
