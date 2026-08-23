@@ -1,5 +1,14 @@
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import {
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 
 import { colors, radius } from '@/constants/theme';
 
@@ -58,7 +67,7 @@ export function StatusActionModal({
   const canConfirm = !requireReason || finalReason.length > 0;
 
   return (
-    <View style={styles.overlay}>
+    <KeyboardAvoidingView style={styles.overlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <Pressable style={StyleSheet.absoluteFill} onPress={isSubmitting ? undefined : onCancel} />
 
       <View style={styles.sheet}>
@@ -118,7 +127,7 @@ export function StatusActionModal({
           </Pressable>
         </View>
       </View>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 

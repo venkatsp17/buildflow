@@ -2,12 +2,13 @@ import { Ionicons } from '@expo/vector-icons';
 import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
-  useWindowDimensions,
   View,
 } from 'react-native';
 
@@ -62,7 +63,6 @@ type Props = {
 
 export function NewOrderModal({ visible, onClose, onCreated }: Props) {
   const { token } = useAuth();
-  const { height: windowHeight } = useWindowDimensions();
 
   const [clientName, setClientName] = useState('');
   const [showCustomerSuggestions, setShowCustomerSuggestions] = useState(false);
@@ -220,10 +220,10 @@ export function NewOrderModal({ visible, onClose, onCreated }: Props) {
   }
 
   return (
-    <View style={styles.overlay}>
+    <KeyboardAvoidingView style={styles.overlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <Pressable style={StyleSheet.absoluteFill} onPress={handleClose} />
 
-      <View style={[styles.sheet, { maxHeight: windowHeight * 0.92 }]}>
+      <View style={[styles.sheet, { maxHeight: '92%' }]}>
         <View style={styles.dragHandle} />
 
         <View style={styles.headerRow}>
@@ -477,7 +477,7 @@ export function NewOrderModal({ visible, onClose, onCreated }: Props) {
           </Pressable>
         </ScrollView>
       </View>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 

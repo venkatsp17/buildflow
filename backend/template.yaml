@@ -25,6 +25,12 @@ Resources:
   JWTSecret:
     Type: AWS::SecretsManager::Secret
     Properties:
+      # Named explicitly (rather than left to CloudFormation's default
+      # auto-naming) so it's guaranteed to start with the stack name and
+      # match the CFN execution role's secret:STACK_NAME-* IAM scoping —
+      # relying on the undocumented default naming pattern is how the
+      # previous deploy attempt hit an AccessDenied on secretsmanager:CreateSecret.
+      Name: !Sub '${AWS::StackName}-jwt-secret'
       Description: HMAC signing secret for JWTs
       GenerateSecretString:
         PasswordLength: 48
@@ -34,7 +40,22 @@ Resources:
   HttpApi:
     Type: AWS::Serverless::HttpApi
     Properties:
-      StageName: Prod
+      # $default (not a named stage like "Prod") so the invoke URL has no
+      # stage prefix — matches the routes Gin registers (e.g. GET /health,
+      # not GET /Prod/health) and the bare execute-api URL in Outputs below.
+      # ginadapter's V2 request accessor passes req.RawPath straight through
+      # without stripping a stage segment, so a named stage 404s every route.
+      StageName: $default
+      # Applies to every route except /auth/login below, which gets its own
+      # stricter limit — this default just caps worst-case cost/abuse from
+      # the rest of the (authenticated) API without affecting normal usage
+      # across ~10 concurrent users, who can easily fire off several
+      # parallel requests when a screen loads (orders + notifications +
+      # summary, etc). Requests beyond the limit get a 429 straight from
+      # API Gateway — the Lambda is never invoked, so they're free too.
+      DefaultRouteSettings:
+        ThrottlingRateLimit: 20
+        ThrottlingBurstLimit: 40
 
   ApiFunction:
     Type: AWS::Serverless::Function
@@ -53,6 +74,21 @@ Resources:
       # over the public internet rather than network-isolated, so it
       # relies on TLS + the pooler's own auth rather than a security group.
       Events:
+        # Explicit route (rather than falling through to the catch-all
+        # below) so it can carry its own, much stricter throttle — this is
+        # the one unauthenticated, brute-forceable endpoint in the API.
+        # 1 req/sec sustained with a burst of 3 is generous for a real
+        # human retrying a typo'd password, but throttles automated
+        # attempts to a crawl.
+        LoginRoute:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /auth/login
+            Method: POST
+            RouteSettings:
+              ThrottlingRateLimit: 1
+              ThrottlingBurstLimit: 3
         Proxy:
           Type: HttpApi
           Properties:

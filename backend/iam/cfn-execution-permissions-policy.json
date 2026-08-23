@@ -49,10 +49,15 @@
         "secretsmanager:PutSecretValue",
         "secretsmanager:DeleteSecret",
         "secretsmanager:TagResource",
-        "secretsmanager:UntagResource",
-        "secretsmanager:GetRandomPassword"
+        "secretsmanager:UntagResource"
       ],
       "Resource": "arn:aws:secretsmanager:ap-south-1:ACCOUNT_ID:secret:STACK_NAME-*"
+    },
+    {
+      "Sid": "SecretsGetRandomPassword",
+      "Effect": "Allow",
+      "Action": "secretsmanager:GetRandomPassword",
+      "Resource": "*"
     },
     {
       "Sid": "LambdaLogs",
@@ -65,6 +70,18 @@
         "logs:DescribeLogGroups"
       ],
       "Resource": "arn:aws:logs:ap-south-1:ACCOUNT_ID:log-group:/aws/lambda/STACK_NAME-*"
+    },
+    {
+      "Sid": "LambdaCodeFromS3",
+      "Effect": "Allow",
+      "Action": "s3:GetObject",
+      "Resource": "arn:aws:s3:::STACK_NAME-sam-artifacts/*"
+    },
+    {
+      "Sid": "SamTransform",
+      "Effect": "Allow",
+      "Action": "cloudformation:CreateChangeSet",
+      "Resource": "arn:aws:cloudformation:ap-south-1:aws:transform/Serverless-2016-10-31"
     },
     {
       "Sid": "HttpApi",
@@ -80,7 +97,8 @@
       ],
       "Resource": [
         "arn:aws:apigateway:ap-south-1::/apis",
-        "arn:aws:apigateway:ap-south-1::/apis/*"
+        "arn:aws:apigateway:ap-south-1::/apis/*",
+        "arn:aws:apigateway:ap-south-1::/tags/*"
       ]
     }
   ]

@@ -63,6 +63,25 @@
       "Effect": "Allow",
       "Action": ["lambda:GetFunction", "lambda:InvokeFunction"],
       "Resource": "arn:aws:lambda:ap-south-1:ACCOUNT_ID:function:STACK_NAME-*"
+    },
+    {
+      "Sid": "ListLogGroups",
+      "Effect": "Allow",
+      "Action": "logs:DescribeLogGroups",
+      "Resource": "*"
+    },
+    {
+      "Sid": "ReadOwnFunctionLogs",
+      "Effect": "Allow",
+      "Action": [
+        "logs:DescribeLogStreams",
+        "logs:GetLogEvents",
+        "logs:FilterLogEvents"
+      ],
+      "Resource": [
+        "arn:aws:logs:ap-south-1:ACCOUNT_ID:log-group:/aws/lambda/STACK_NAME-*",
+        "arn:aws:logs:ap-south-1:ACCOUNT_ID:log-group:/aws/lambda/STACK_NAME-*:*"
+      ]
     }
   ]
 }

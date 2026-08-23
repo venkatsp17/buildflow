@@ -2,12 +2,13 @@ import { Ionicons } from '@expo/vector-icons';
 import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
-  useWindowDimensions,
   View,
 } from 'react-native';
 
@@ -37,7 +38,6 @@ type Props = {
 
 export function PriceListModal({ visible, onClose, onSaved, editing }: Props) {
   const { token } = useAuth();
-  const { height: windowHeight } = useWindowDimensions();
 
   const [name, setName] = useState('');
   const [items, setItems] = useState<ItemDraft[]>([emptyItem()]);
@@ -129,10 +129,10 @@ export function PriceListModal({ visible, onClose, onSaved, editing }: Props) {
   }
 
   return (
-    <View style={styles.overlay}>
+    <KeyboardAvoidingView style={styles.overlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <Pressable style={StyleSheet.absoluteFill} onPress={handleClose} />
 
-      <View style={[styles.sheet, { maxHeight: windowHeight * 0.92 }]}>
+      <View style={[styles.sheet, { maxHeight: '92%' }]}>
         <View style={styles.dragHandle} />
 
         <View style={styles.headerRow}>
@@ -234,7 +234,7 @@ export function PriceListModal({ visible, onClose, onSaved, editing }: Props) {
           </Pressable>
         </ScrollView>
       </View>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 

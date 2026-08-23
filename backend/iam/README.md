@@ -89,7 +89,7 @@ explicitly — never root, never an admin identity:
 ```powershell
 Set-Location ../..   # back to repo root, then into backend
 Set-Location backend
-sam build
+sam build --use-container
 sam deploy --guided `
   --profile buildflow-deploy `
   --region ap-south-1 `

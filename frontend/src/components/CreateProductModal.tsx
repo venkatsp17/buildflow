@@ -1,6 +1,16 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import {
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 
 import { createProduct, type Product } from '@/api/client';
 import { useAuth } from '@/auth/AuthContext';
@@ -52,7 +62,7 @@ export function CreateProductModal({ visible, onClose, onCreated }: Props) {
   };
 
   return (
-    <View style={styles.overlay}>
+    <KeyboardAvoidingView style={styles.overlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
 
       <View style={styles.sheet}>
@@ -92,7 +102,7 @@ export function CreateProductModal({ visible, onClose, onCreated }: Props) {
           </Pressable>
         </ScrollView>
       </View>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 

@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { usePathname, useRouter } from 'expo-router';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useAuth } from '@/auth/AuthContext';
 import { colors } from '@/constants/theme';
@@ -26,6 +27,7 @@ export function BottomTabBar() {
   const pathname = usePathname();
   const router = useRouter();
   const { user } = useAuth();
+  const insets = useSafeAreaInsets();
 
   // Manufacturing has no separate landing dashboard — Orders (pre-filtered
   // to Pending) is their one screen, so a Home tab pointing at the same
@@ -34,7 +36,7 @@ export function BottomTabBar() {
     user?.role === 'manufacturing' ? DEFAULT_TABS.slice(1) : user?.role === 'manager' ? MANAGER_TABS : DEFAULT_TABS;
 
   return (
-    <View style={styles.bar}>
+    <View style={[styles.bar, { paddingBottom: Math.max(insets.bottom, 8) }]}>
       {tabs.map((tab) => {
         const active = pathname === tab.href;
         const color = active ? colors.amber : colors.textMuted;
@@ -55,7 +57,6 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: colors.border,
     backgroundColor: colors.card,
-    paddingBottom: 8,
     paddingTop: 8,
   },
   tab: { flex: 1, alignItems: 'center', gap: 2 },

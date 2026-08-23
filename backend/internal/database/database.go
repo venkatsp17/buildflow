@@ -12,7 +12,18 @@ import (
 // Connect opens a GORM connection to Postgres, auto-migrates the schema, and
 // seeds base reference data (customers/products) if the tables are empty.
 func Connect(databaseURL string) (*gorm.DB, error) {
-	db, err := gorm.Open(postgres.Open(databaseURL), &gorm.Config{})
+	// PreferSimpleProtocol disables the driver's implicit server-side
+	// prepared statements — required in production, where DATABASE_URL
+	// points at Supabase's Transaction pooler (PgBouncer). Transaction-mode
+	// pooling hands out a different backend connection per statement, so a
+	// prepared statement created on one backend can collide with (or
+	// vanish from under) the next query; the simple query protocol avoids
+	// that entirely. Harmless locally too (docker-compose Postgres, no
+	// pooler in front of it).
+	db, err := gorm.Open(postgres.New(postgres.Config{
+		DSN:                  databaseURL,
+		PreferSimpleProtocol: true,
+	}), &gorm.Config{})
 	if err != nil {
 		return nil, err
 	}
@@ -64,12 +75,20 @@ func Connect(databaseURL string) (*gorm.DB, error) {
 }
 
 // migrateUserIdentifierColumns handles the one-time move from email-based
-// login to username-based login. On a brand-new database the `users` table
-// doesn't exist yet, so there's nothing to migrate — AutoMigrate creates it
-// with the current (username/name) shape directly.
+// login to username-based login. On a brand-new database the `public.users`
+// table doesn't exist yet, so there's nothing to migrate — AutoMigrate
+// creates it with the current (username/name) shape directly.
+//
+// Every information_schema query here is scoped to table_schema = 'public'
+// deliberately: Supabase provisions its own `auth.users` table in every
+// project (part of Supabase Auth, unrelated to this app), and
+// information_schema.tables/columns span all schemas by default. An
+// unscoped check matches that instead of our own table, wrongly concludes
+// a users table already exists, and then fails when it tries to alter a
+// public.users that was never actually there.
 func migrateUserIdentifierColumns(db *gorm.DB) error {
 	var usersTableExists bool
-	if err := db.Raw(`SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'users')`).Scan(&usersTableExists).Error; err != nil {
+	if err := db.Raw(`SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'users')`).Scan(&usersTableExists).Error; err != nil {
 		return err
 	}
 	if !usersTableExists {
@@ -77,10 +96,10 @@ func migrateUserIdentifierColumns(db *gorm.DB) error {
 	}
 
 	var hasEmail, hasUsername bool
-	if err := db.Raw(`SELECT EXISTS (SELECT FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'email')`).Scan(&hasEmail).Error; err != nil {
+	if err := db.Raw(`SELECT EXISTS (SELECT FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'email')`).Scan(&hasEmail).Error; err != nil {
 		return err
 	}
-	if err := db.Raw(`SELECT EXISTS (SELECT FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'username')`).Scan(&hasUsername).Error; err != nil {
+	if err := db.Raw(`SELECT EXISTS (SELECT FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'username')`).Scan(&hasUsername).Error; err != nil {
 		return err
 	}
 	if hasEmail && !hasUsername {

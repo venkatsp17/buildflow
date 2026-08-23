@@ -1,7 +1,62 @@
-export default ({ config }) => ({
-  ...config,
-  android: {
-    ...config.android,
-    googleServicesFile: process.env.GOOGLE_SERVICES_JSON,
+module.exports = {
+  expo: {
+    name: "BuildFlow",
+    slug: "buildflow",
+    version: "1.0.0",
+    orientation: "portrait",
+    icon: "./assets/images/icon.png",
+    scheme: "buildflow",
+    userInterfaceStyle: "automatic",
+    ios: {
+      icon: "./assets/expo.icon",
+    },
+    android: {
+      adaptiveIcon: {
+        backgroundColor: "#E6F4FE",
+        foregroundImage: "./assets/images/android-icon-foreground.png",
+        backgroundImage: "./assets/images/android-icon-background.png",
+        monochromeImage: "./assets/images/android-icon-monochrome.png",
+      },
+      predictiveBackGestureEnabled: false,
+      package: "com.venkatsp17.buildflow",
+      // EAS cloud builds receive this from the file-type
+      // GOOGLE_SERVICES_JSON environment variable.
+      googleServicesFile: process.env.GOOGLE_SERVICES_JSON,
+    },
+    web: {
+      output: "static",
+      favicon: "./assets/images/favicon.png",
+    },
+    plugins: [
+      "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          backgroundColor: "#208AEF",
+          image: "./assets/images/splash-icon.png",
+          imageWidth: 76,
+        },
+      ],
+      "expo-secure-store",
+      "@react-native-community/datetimepicker",
+      "expo-notifications",
+    ],
+    experiments: {
+      typedRoutes: true,
+      reactCompiler: true,
+    },
+    extra: {
+      router: {},
+      eas: {
+        projectId: "8f04e714-0204-44f2-bd39-0223b49d58c1",
+      },
+    },
+    owner: "venkatsp17",
+    runtimeVersion: {
+      policy: "appVersion",
+    },
+    updates: {
+      url: "https://u.expo.dev/8f04e714-0204-44f2-bd39-0223b49d58c1",
+    },
   },
-});
+};
