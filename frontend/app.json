@@ -19,7 +19,7 @@
       },
       "predictiveBackGestureEnabled": false,
       "package": "com.venkatsp17.buildflow",
-      "googleServicesFile": process.env.GOOGLE_SERVICES_JSON
+      "googleServicesFile": "./google-services.json"
     },
     "web": {
       "output": "static",
