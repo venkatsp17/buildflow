@@ -60,3 +60,5 @@ Join our community of developers creating universal apps.
 Pushes to `main` that change files under `frontend/` publish an EAS Update to
 the `production` channel through GitHub Actions. The repository must contain
 an Actions secret named `EXPO_TOKEN` for this workflow to run.
+After adding or rotating the secret, rerun a failed workflow or push another
+frontend change so GitHub Actions starts with the new value.
