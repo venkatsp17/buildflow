@@ -14,7 +14,7 @@ export function AuthHeader({ title, subtitle }: Props) {
         </View>
         <View>
           <Text style={styles.brandName}>BuildFlow</Text>
-          <Text style={styles.brandTagline}>Manufacturing Order System</Text>
+          <Text style={styles.brandTagline}>Order Management System</Text>
         </View>
       </View>
       <Text style={styles.title}>{title}</Text>

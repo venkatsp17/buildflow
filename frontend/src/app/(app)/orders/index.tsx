@@ -67,7 +67,7 @@ export default function Orders() {
   const [showFilters, setShowFilters] = useState(false);
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
   const [isSubmittingAction, setIsSubmittingAction] = useState(false);
-  const canApprove = user?.role === 'manufacturing' || user?.role === 'manager';
+  const canApprove = user?.role === 'manager';
 
   const [customerQuery, setCustomerQuery] = useState('');
   const [showCustomerSuggestions, setShowCustomerSuggestions] = useState(false);

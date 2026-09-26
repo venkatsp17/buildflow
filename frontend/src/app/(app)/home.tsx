@@ -1,5 +1,3 @@
-import { Redirect } from 'expo-router';
-
 import { useAuth } from '@/auth/AuthContext';
 import { GenericHomeScreen } from '@/screens/GenericHomeScreen';
 import { ManagerDashboardScreen } from '@/screens/ManagerDashboardScreen';
@@ -14,13 +12,6 @@ export default function Home() {
 
   if (user?.role === 'manager') {
     return <ManagerDashboardScreen />;
-  }
-
-  // Manufacturing has no separate landing dashboard — Orders (pre-filtered
-  // to Pending) is their one screen, so there's nothing distinct to show
-  // here; send them straight there instead of a redundant Home tab.
-  if (user?.role === 'manufacturing') {
-    return <Redirect href="/orders" />;
   }
 
   return <GenericHomeScreen />;

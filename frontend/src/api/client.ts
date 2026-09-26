@@ -105,6 +105,11 @@ export type Customer = {
   name: string;
   phone: string;
   email: string;
+  gstNo: string;
+  address: string;
+  city: string;
+  latitude?: number;
+  longitude?: number;
 };
 
 export type Product = {
@@ -233,23 +238,15 @@ export function getOrderSummary(token: string): Promise<OrderSummary> {
   });
 }
 
-export type RegionRevenue = {
-  region: string;
-  orders: number;
-  revenue: number;
-};
-
 export type ManagerDashboard = {
   currency: string;
   totalValue: number;
   totalOrders: number;
-  regionCount: number;
   inProgress: number;
   delayed: number;
   dispatchReady: number;
   completed: number;
   rejected: number;
-  revenueByRegion: RegionRevenue[];
   // Mon..Sun order counts for the current calendar week.
   weeklyOrders: number[];
 };

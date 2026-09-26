@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { usePathname, useRouter } from 'expo-router';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useAuth } from '@/auth/AuthContext';
@@ -28,15 +28,15 @@ export function BottomTabBar() {
   const router = useRouter();
   const { user } = useAuth();
   const insets = useSafeAreaInsets();
+  // Some Android devices using three-button navigation report a zero safe
+  // area inset even though the system controls still occupy the bottom of
+  // the screen. Keep a fallback buffer so those controls never cover tabs.
+  const bottomPadding = Math.max(insets.bottom, Platform.OS === 'android' ? 28 : 8);
 
-  // Manufacturing has no separate landing dashboard — Orders (pre-filtered
-  // to Pending) is their one screen, so a Home tab pointing at the same
-  // place would just be a redundant second entry.
-  const tabs =
-    user?.role === 'manufacturing' ? DEFAULT_TABS.slice(1) : user?.role === 'manager' ? MANAGER_TABS : DEFAULT_TABS;
+  const tabs = user?.role === 'manager' ? MANAGER_TABS : DEFAULT_TABS;
 
   return (
-    <View style={[styles.bar, { paddingBottom: Math.max(insets.bottom, 8) }]}>
+    <View style={[styles.bar, { paddingBottom: bottomPadding }]}>
       {tabs.map((tab) => {
         const active = pathname === tab.href;
         const color = active ? colors.amber : colors.textMuted;

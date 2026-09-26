@@ -1,7 +1,7 @@
 import type { ComponentProps } from 'react';
 import type { Ionicons } from '@expo/vector-icons';
 
-export type RoleValue = 'sales' | 'manufacturing' | 'manager';
+export type RoleValue = 'sales' | 'manager';
 
 export type RoleOption = {
   value: RoleValue;
@@ -12,12 +12,6 @@ export type RoleOption = {
 
 export const ROLE_OPTIONS: RoleOption[] = [
   { value: 'sales', label: 'Sales', description: 'Create & track orders', icon: 'clipboard-outline' },
-  {
-    value: 'manufacturing',
-    label: 'Manufacturing',
-    description: 'Process production queue',
-    icon: 'construct-outline',
-  },
   { value: 'manager', label: 'Manager', description: 'Full visibility & analytics', icon: 'bar-chart-outline' },
 ];
 

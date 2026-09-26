@@ -57,7 +57,7 @@ func StatusChangeNotification(order models.Order, from, to models.OrderStatus) *
 	case models.OrderStatusApproved:
 		notifType = models.NotificationTypeOrderApproved
 		title = "Order Approved"
-		message = fmt.Sprintf("%s approved by manufacturing", order.TicketNumber)
+		message = fmt.Sprintf("%s approved", order.TicketNumber)
 	case models.OrderStatusRejected:
 		notifType = models.NotificationTypeOrderRejected
 		title = "Order Rejected"

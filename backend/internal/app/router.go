@@ -43,7 +43,7 @@ func NewRouter(db *gorm.DB, jwtSecret string, corsAllowedOrigins []string) *gin.
 	orderGroup.GET("/priority", orderHandler.Priority)
 	orderGroup.GET("/:id", orderHandler.Detail)
 	orderGroup.POST("", middleware.RequireRole(string(models.RoleSales)), orderHandler.Create)
-	orderGroup.PATCH("/:id/status", middleware.RequireRole(string(models.RoleManufacturing), string(models.RoleManager)), orderHandler.UpdateStatus)
+	orderGroup.PATCH("/:id/status", middleware.RequireRole(string(models.RoleManager)), orderHandler.UpdateStatus)
 
 	notificationGroup := router.Group("/notifications", middleware.RequireAuth(db, jwtSecret))
 	notificationGroup.GET("", notificationHandler.List)

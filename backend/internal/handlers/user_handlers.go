@@ -39,7 +39,7 @@ func (h *UserHandler) List(c *gin.Context) {
 type createUserRequest struct {
 	Name     string `json:"name" binding:"required"`
 	Username string `json:"username" binding:"required,min=3"`
-	Role     string `json:"role" binding:"required,oneof=sales manufacturing manager"`
+	Role     string `json:"role" binding:"required,oneof=sales manager"`
 }
 
 // CreateUser provisions a new account with a server-generated password —

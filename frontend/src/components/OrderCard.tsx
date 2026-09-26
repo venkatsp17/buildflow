@@ -29,7 +29,7 @@ type Props = {
   showPriceList?: boolean;
   // When provided, renders a Reject/Approve action row below the card,
   // outside the tap-to-open-detail Pressable so the two don't fight over
-  // the touch (used for manufacturing's pending orders on the Orders page).
+  // the touch (used for managers' pending orders on the Orders page).
   onApprove?: () => void;
   onReject?: () => void;
   // Single advance-to-next-stage action (e.g. "Mark Dispatch Ready" for

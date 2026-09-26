@@ -7,16 +7,9 @@ import { getManagerDashboard, type ManagerDashboard } from '@/api/client';
 import { useAuth } from '@/auth/AuthContext';
 import { colors, radius } from '@/constants/theme';
 import { useNotifications } from '@/notifications/NotificationContext';
-import { formatCompactMoney, formatMoney } from '@/utils/format';
+import { formatCompactMoney } from '@/utils/format';
 
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-
-const REGION_COLORS: Record<string, string> = {
-  Dubai: colors.blue,
-  'Abu Dhabi': colors.green,
-  Sharjah: colors.purple,
-  'Northern Emirates': colors.red,
-};
 
 export function ManagerDashboardScreen() {
   const { token, logout } = useAuth();
@@ -46,7 +39,6 @@ export function ManagerDashboardScreen() {
     }, [load]),
   );
 
-  const maxRegionRevenue = Math.max(1, ...(dashboard?.revenueByRegion.map((r) => r.revenue) ?? [0]));
   const maxWeeklyOrders = Math.max(1, ...(dashboard?.weeklyOrders ?? [0]));
 
   return (
@@ -87,9 +79,7 @@ export function ManagerDashboardScreen() {
               <Text style={styles.portfolioValue}>
                 {dashboard.currency} {formatCompactMoney(dashboard.totalValue)}
               </Text>
-              <Text style={styles.portfolioSubtitle}>
-                {dashboard.totalOrders} orders · {dashboard.regionCount} regions
-              </Text>
+              <Text style={styles.portfolioSubtitle}>{dashboard.totalOrders} orders</Text>
             </View>
 
             <View style={styles.statsGrid}>
@@ -99,31 +89,6 @@ export function ManagerDashboardScreen() {
               <StatTile label="Dispatch Rdy" value={dashboard.dispatchReady} fg={colors.purple} bg={colors.purpleMuted} />
               <StatTile label="Completed" value={dashboard.completed} fg={colors.green} bg={colors.greenMuted} />
               <StatTile label="Rejected" value={dashboard.rejected} fg={colors.red} bg={colors.redMuted} />
-            </View>
-
-            <View style={styles.card}>
-              <Text style={styles.cardTitle}>Revenue by Region</Text>
-              {dashboard.revenueByRegion.map((region) => {
-                const dotColor = REGION_COLORS[region.region] ?? colors.gray;
-                const pct = Math.max(4, Math.round((region.revenue / maxRegionRevenue) * 100));
-                return (
-                  <View key={region.region} style={styles.regionRow}>
-                    <View style={styles.regionHeaderRow}>
-                      <View style={styles.regionLabelRow}>
-                        <View style={[styles.regionDot, { backgroundColor: dotColor }]} />
-                        <Text style={styles.regionName}>{region.region}</Text>
-                        <Text style={styles.regionOrders}>{region.orders} orders</Text>
-                      </View>
-                      <Text style={styles.regionRevenue}>
-                        {dashboard.currency} {formatMoney(region.revenue)}
-                      </Text>
-                    </View>
-                    <View style={styles.regionTrack}>
-                      <View style={[styles.regionFill, { width: `${pct}%`, backgroundColor: dotColor }]} />
-                    </View>
-                  </View>
-                );
-              })}
             </View>
 
             <View style={styles.card}>
@@ -241,15 +206,6 @@ const styles = StyleSheet.create({
     marginTop: 16,
   },
   cardTitle: { fontSize: 16, fontWeight: '700', color: colors.text, marginBottom: 14 },
-  regionRow: { marginBottom: 14 },
-  regionHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
-  regionLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexShrink: 1 },
-  regionDot: { width: 8, height: 8, borderRadius: 4 },
-  regionName: { fontSize: 14, fontWeight: '600', color: colors.text },
-  regionOrders: { fontSize: 12, color: colors.textMuted },
-  regionRevenue: { fontSize: 14, fontWeight: '700', color: colors.text },
-  regionTrack: { height: 6, borderRadius: 3, backgroundColor: colors.grayMuted, overflow: 'hidden' },
-  regionFill: { height: '100%', borderRadius: 3 },
   barChart: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', height: 130 },
   barColumn: { flex: 1, alignItems: 'center', gap: 8 },
   barTrack: { width: 20, height: 100, justifyContent: 'flex-end' },

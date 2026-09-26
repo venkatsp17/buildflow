@@ -21,7 +21,7 @@ type StatusAction = {
   requireReason?: boolean;
 };
 
-// Only manufacturing/manager can move an order through fulfillment; sales
+// Only managers can move an order through fulfillment; sales
 // creates the order but doesn't advance its status. Mirrors the backend's
 // orderStatusTransitions — each step needs its own confirmation, so an
 // approved order can't jump straight to dispatched, for example.
@@ -189,7 +189,7 @@ export default function OrderDetail() {
         <OrderProgressStepper status={order.status} rejectionReason={order.rejectionReason} />
       </View>
 
-      {(user?.role === 'manufacturing' || user?.role === 'manager') && NEXT_STATUSES[order.status]?.length > 0 && (
+      {user?.role === 'manager' && NEXT_STATUSES[order.status]?.length > 0 && (
         <View style={styles.card}>
           <Text style={styles.cardLabel}>UPDATE STATUS</Text>
           <View style={styles.statusActionsRow}>

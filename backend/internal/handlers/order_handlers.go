@@ -43,8 +43,8 @@ func NewOrderHandler(db *gorm.DB) *OrderHandler {
 
 // redactPriceList clears PriceListName for anyone but a manager — sales
 // picks products off their assigned price list but never sees its name,
-// and manufacturing fulfills orders without needing to know pricing
-// context either. Applied at the handler layer (not left to the frontend
+// and sales does not need its internal name. Applied at the handler layer
+// (not left to the frontend
 // to simply not render) since the field would otherwise still be sitting
 // in the JSON response for anyone to read via devtools.
 func redactPriceList(role any, orders []models.Order) {
@@ -98,8 +98,8 @@ func (h *OrderHandler) List(c *gin.Context) {
 	// other via GORM's shared statement builder.
 	baseQuery := func() *gorm.DB {
 		q := h.DB.Model(&models.Order{})
-		// Sales only sees their own orders; manufacturing/manager need to
-		// see every sales rep's orders to fulfill and update them.
+		// Sales only sees their own orders; managers see every sales rep's
+		// orders to oversee and update them.
 		if role == string(models.RoleSales) {
 			q = q.Where("orders.created_by_id = ?", userID)
 		}
@@ -124,7 +124,7 @@ func (h *OrderHandler) List(c *gin.Context) {
 		}
 
 		// pending, approved, and rejected are the top-level "super states" a
-		// sales rep or manufacturing thinks in terms of. approved is really a
+		// sales rep or manager thinks in terms of. approved is really a
 		// family of statuses — everything past the approval gate — with its
 		// own sub-states (in_progress, dispatched, delayed, delivered)
 		// selectable individually via the same param.
@@ -265,31 +265,16 @@ func (h *OrderHandler) Summary(c *gin.Context) {
 	c.JSON(http.StatusOK, summary)
 }
 
-// managerDashboardRegions is a fixed list of the regions the business
-// operates in, always shown on the manager dashboard (even at zero orders)
-// rather than derived from whatever cities happen to appear in the data —
-// matches the "Northern Emirates: 0 orders" row product wants visible from
-// day one, before any order has actually shipped there.
-var managerDashboardRegions = []string{"Dubai", "Abu Dhabi", "Sharjah", "Northern Emirates"}
-
-type regionRevenue struct {
-	Region  string  `json:"region"`
-	Orders  int64   `json:"orders"`
-	Revenue float64 `json:"revenue"`
-}
-
 type managerDashboard struct {
-	Currency        string          `json:"currency"`
-	TotalValue      float64         `json:"totalValue"`
-	TotalOrders     int64           `json:"totalOrders"`
-	RegionCount     int             `json:"regionCount"`
-	InProgress      int64           `json:"inProgress"`
-	Delayed         int64           `json:"delayed"`
-	DispatchReady   int64           `json:"dispatchReady"`
-	Completed       int64           `json:"completed"`
-	Rejected        int64           `json:"rejected"`
-	RevenueByRegion []regionRevenue `json:"revenueByRegion"`
-	WeeklyOrders    [7]int64        `json:"weeklyOrders"` // Mon..Sun, current calendar week
+	Currency      string   `json:"currency"`
+	TotalValue    float64  `json:"totalValue"`
+	TotalOrders   int64    `json:"totalOrders"`
+	InProgress    int64    `json:"inProgress"`
+	Delayed       int64    `json:"delayed"`
+	DispatchReady int64    `json:"dispatchReady"`
+	Completed     int64    `json:"completed"`
+	Rejected      int64    `json:"rejected"`
+	WeeklyOrders  [7]int64 `json:"weeklyOrders"` // Mon..Sun, current calendar week
 }
 
 // ManagerDashboard returns company-wide aggregate stats across every sales
@@ -299,7 +284,7 @@ type managerDashboard struct {
 func (h *OrderHandler) ManagerDashboard(c *gin.Context) {
 	scoped := func() *gorm.DB { return h.DB.Model(&models.Order{}) }
 
-	dashboard := managerDashboard{Currency: "₹", RegionCount: len(managerDashboardRegions)}
+	dashboard := managerDashboard{Currency: "₹"}
 
 	if err := scoped().Count(&dashboard.TotalOrders).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load dashboard"})
@@ -330,21 +315,6 @@ func (h *OrderHandler) ManagerDashboard(c *gin.Context) {
 	if err := scoped().Where("status = ?", models.OrderStatusRejected).Count(&dashboard.Rejected).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load dashboard"})
 		return
-	}
-
-	dashboard.RevenueByRegion = make([]regionRevenue, len(managerDashboardRegions))
-	for i, region := range managerDashboardRegions {
-		rr := regionRevenue{Region: region}
-		row := scoped().Where("LOWER(city) = LOWER(?)", region)
-		if err := row.Count(&rr.Orders).Error; err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load dashboard"})
-			return
-		}
-		if err := scoped().Where("LOWER(city) = LOWER(?)", region).Select("COALESCE(SUM(value), 0)").Row().Scan(&rr.Revenue); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load dashboard"})
-			return
-		}
-		dashboard.RevenueByRegion[i] = rr
 	}
 
 	type weeklyRow struct {
@@ -454,6 +424,19 @@ func (h *OrderHandler) Create(c *gin.Context) {
 		return
 	}
 
+	// Keep the customer directory's delivery location reusable. This makes a
+	// later order a select-only customer flow: choosing the customer supplies
+	// the address, city and map coordinates without retyping them.
+	if err := h.DB.Model(&customer).Updates(map[string]any{
+		"address":   strings.TrimSpace(req.Address),
+		"city":      strings.TrimSpace(req.City),
+		"latitude":  req.Latitude,
+		"longitude": req.Longitude,
+	}).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to save customer address"})
+		return
+	}
+
 	// Pricing always comes from the requesting user's assigned price list,
 	// never from client input — sales reps can't set or edit prices.
 	priceByProductID := priceListLookup(h.DB, userID)
@@ -519,7 +502,7 @@ type updateOrderStatusRequest struct {
 	Reason string `json:"reason"`
 }
 
-// UpdateStatus moves an order to a new status (manufacturing/manager only —
+// UpdateStatus moves an order to a new status (manager only —
 // sales creates orders but doesn't fulfill them). Only transitions defined
 // in models.orderStatusTransitions are allowed, so the API can't be used to
 // skip steps or resurrect a terminal order. Notifying the order's creator

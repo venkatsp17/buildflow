@@ -15,10 +15,8 @@ import {
 import {
   createOrder,
   searchCustomers,
-  searchGeocode,
   searchProducts,
   type Customer,
-  type GeocodeResult,
   type Order,
   type Product,
 } from '@/api/client';
@@ -65,6 +63,7 @@ export function NewOrderModal({ visible, onClose, onCreated }: Props) {
   const { token } = useAuth();
 
   const [clientName, setClientName] = useState('');
+  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [showCustomerSuggestions, setShowCustomerSuggestions] = useState(false);
   const [customerResults, setCustomerResults] = useState<Customer[]>([]);
 
@@ -76,10 +75,7 @@ export function NewOrderModal({ visible, onClose, onCreated }: Props) {
   const [productResults, setProductResults] = useState<Product[]>([]);
 
   const [address, setAddress] = useState('');
-  const [showAddressSuggestions, setShowAddressSuggestions] = useState(false);
-  const [addressResults, setAddressResults] = useState<GeocodeResult[]>([]);
   const [selectedLocation, setSelectedLocation] = useState<{ lat: number; lon: number } | null>(null);
-  const [isGeocoding, setIsGeocoding] = useState(false);
   const [city, setCity] = useState('');
 
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -88,7 +84,6 @@ export function NewOrderModal({ visible, onClose, onCreated }: Props) {
   const debouncedClientName = useDebouncedValue(clientName, 300);
   const activeProductQuery = activeProductIndex !== null ? items[activeProductIndex]?.productName ?? '' : '';
   const debouncedProductQuery = useDebouncedValue(activeProductQuery, 300);
-  const debouncedAddress = useDebouncedValue(address, 400);
 
   // Empty search text still hits the API — the backend returns its default
   // alphabetical list in that case — so focusing the field shows a
@@ -129,35 +124,15 @@ export function NewOrderModal({ visible, onClose, onCreated }: Props) {
     };
   }, [token, activeProductIndex, debouncedProductQuery]);
 
-  useEffect(() => {
-    if (!token || debouncedAddress.trim().length < 3) {
-      setAddressResults([]);
-      return;
-    }
-    let cancelled = false;
-    setIsGeocoding(true);
-    searchGeocode(token, debouncedAddress.trim())
-      .then(({ results }) => {
-        if (!cancelled) setAddressResults(results);
-      })
-      .catch(() => {
-        if (!cancelled) setAddressResults([]);
-      })
-      .finally(() => {
-        if (!cancelled) setIsGeocoding(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [token, debouncedAddress]);
-
   const hasValidItems = items.some((item) => item.productId && Number(item.quantity) > 0);
-  const canSubmit = !!clientName.trim() && !!dueDate && !!city.trim() && hasValidItems && !isSubmitting;
+  const canSubmit =
+    !!selectedCustomer && !!address.trim() && !!dueDate && !!city.trim() && hasValidItems && !isSubmitting;
   const orderTotal = items.reduce((sum, item) => sum + lineTotal(item), 0);
   const totalUnits = items.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
 
   const resetForm = () => {
     setClientName('');
+    setSelectedCustomer(null);
     setCustomerResults([]);
     setDueDate('');
     setUrgency('medium');
@@ -165,7 +140,6 @@ export function NewOrderModal({ visible, onClose, onCreated }: Props) {
     setActiveProductIndex(null);
     setProductResults([]);
     setAddress('');
-    setAddressResults([]);
     setSelectedLocation(null);
     setCity('');
     setError(null);
@@ -248,6 +222,10 @@ export function NewOrderModal({ visible, onClose, onCreated }: Props) {
               value={clientName}
               onChangeText={(text) => {
                 setClientName(text);
+                setSelectedCustomer(null);
+                setAddress('');
+                setCity('');
+                setSelectedLocation(null);
                 setShowCustomerSuggestions(true);
               }}
               onFocus={() => setShowCustomerSuggestions(true)}
@@ -261,15 +239,50 @@ export function NewOrderModal({ visible, onClose, onCreated }: Props) {
                   style={styles.suggestionRow}
                   onPress={() => {
                     setClientName(customer.name);
+                    setSelectedCustomer(customer);
+                    setAddress(customer.address || '');
+                    setCity(customer.city || '');
+                    setSelectedLocation(
+                      customer.latitude != null && customer.longitude != null
+                        ? { lat: customer.latitude, lon: customer.longitude }
+                        : null,
+                    );
                     setShowCustomerSuggestions(false);
                     setCustomerResults([]);
                   }}
                 >
-                  <Text style={styles.suggestionText}>{customer.name}</Text>
+                  <View style={styles.customerSuggestionContent}>
+                    <Text style={styles.suggestionText}>{customer.name}</Text>
+                    <Text style={styles.customerAddress} numberOfLines={2}>
+                      {customer.address || 'No saved address'}
+                    </Text>
+                  </View>
                 </Pressable>
               ))}
             </View>
           )}
+
+          <Text style={styles.label}>Customer ID</Text>
+          <View style={styles.inputWrap}>
+            <Ionicons name="id-card-outline" size={16} color={colors.textMuted} />
+            <TextInput
+              style={[styles.input, styles.readOnlyInput]}
+              placeholder="Select a customer to fill Customer ID"
+              value={selectedCustomer ? String(selectedCustomer.id) : ''}
+              editable={false}
+            />
+          </View>
+
+          <Text style={styles.label}>GST No</Text>
+          <View style={styles.inputWrap}>
+            <Ionicons name="document-text-outline" size={16} color={colors.textMuted} />
+            <TextInput
+              style={[styles.input, styles.readOnlyInput]}
+              placeholder={selectedCustomer ? 'No GST number saved' : 'Select a customer to fill GST No'}
+              value={selectedCustomer?.gstNo ?? ''}
+              editable={false}
+            />
+          </View>
 
           <Text style={styles.label}>Due Date</Text>
           <DatePickerInput value={dueDate} onChange={setDueDate} placeholder="Select date" />
@@ -407,54 +420,19 @@ export function NewOrderModal({ visible, onClose, onCreated }: Props) {
             </View>
           )}
 
-          <Text style={styles.label}>City</Text>
-          <View style={styles.inputWrap}>
-            <Ionicons name="business-outline" size={16} color={colors.textMuted} />
-            <TextInput
-              style={styles.input}
-              placeholder="City"
-              value={city}
-              onChangeText={setCity}
-            />
-          </View>
-
           <Text style={styles.label}>Delivery Address</Text>
-          <View style={styles.inputWrap}>
-            <Ionicons name="location-outline" size={16} color={colors.textMuted} />
+          <View style={[styles.inputWrap, styles.multilineInputWrap]}>
+            <Ionicons name="location-outline" size={16} color={colors.textMuted} style={styles.multilineInputIcon} />
             <TextInput
-              style={styles.input}
-              placeholder="Site address..."
+              style={[styles.input, styles.readOnlyInput, styles.multilineAddressInput]}
+              placeholder={selectedCustomer ? 'No saved address' : 'Select a customer to fill the address'}
               value={address}
-              onChangeText={(text) => {
-                setAddress(text);
-                setShowAddressSuggestions(true);
-                setSelectedLocation(null);
-              }}
-              onFocus={() => setShowAddressSuggestions(true)}
+              editable={false}
+              multiline
+              numberOfLines={3}
+              textAlignVertical="top"
             />
-            {isGeocoding && <ActivityIndicator size="small" color={colors.textMuted} />}
           </View>
-          {showAddressSuggestions && addressResults.length > 0 && (
-            <View style={styles.suggestionsBox}>
-              {addressResults.map((result, i) => (
-                <Pressable
-                  key={i}
-                  style={styles.suggestionRow}
-                  onPress={() => {
-                    setAddress(result.displayName);
-                    setSelectedLocation({ lat: result.latitude, lon: result.longitude });
-                    if (result.city) setCity(result.city);
-                    setShowAddressSuggestions(false);
-                    setAddressResults([]);
-                  }}
-                >
-                  <Text style={styles.suggestionText} numberOfLines={2}>
-                    {result.displayName}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
-          )}
 
           {selectedLocation && (
             <View style={styles.mapWrap}>
@@ -551,6 +529,12 @@ const styles = StyleSheet.create({
   suggestionRow: { paddingVertical: 10, paddingHorizontal: 12, borderBottomWidth: 1, borderBottomColor: colors.border },
   suggestionRowBetween: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   suggestionText: { fontSize: 14, color: colors.text },
+  customerSuggestionContent: { flex: 1, gap: 3 },
+  customerAddress: { fontSize: 12, color: colors.textMuted, lineHeight: 16 },
+  readOnlyInput: { color: colors.textMuted },
+  multilineInputWrap: { alignItems: 'flex-start' },
+  multilineInputIcon: { marginTop: 13 },
+  multilineAddressInput: { minHeight: 72, lineHeight: 20 },
   suggestionPrice: { fontSize: 13, color: colors.amber, fontWeight: '600' },
   priorityRow: { flexDirection: 'row', gap: 8 },
   priorityPill: {

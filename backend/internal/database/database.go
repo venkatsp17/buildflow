@@ -50,6 +50,16 @@ func Connect(databaseURL string) (*gorm.DB, error) {
 		return nil, err
 	}
 
+	// Manufacturing is no longer an application role. Remove legacy device
+	// registrations first, then the obsolete accounts so their existing JWTs
+	// stop authenticating and the database matches the supported role set.
+	if err := db.Exec(`DELETE FROM push_tokens WHERE user_id IN (SELECT id FROM users WHERE role = 'manufacturing')`).Error; err != nil {
+		return nil, err
+	}
+	if err := db.Exec(`DELETE FROM users WHERE role = 'manufacturing'`).Error; err != nil {
+		return nil, err
+	}
+
 	if err := ensureSuperUserBootstrap(db); err != nil {
 		return nil, err
 	}
@@ -64,6 +74,24 @@ func Connect(databaseURL string) (*gorm.DB, error) {
 
 	// One-time rename of the "done" status value to "delivered".
 	if err := db.Exec("UPDATE orders SET status = 'delivered' WHERE status = 'done'").Error; err != nil {
+		return nil, err
+	}
+
+	// Customer locations originally lived only on orders. Preserve existing
+	// installations by copying each customer's most recently used delivery
+	// location into the new reusable customer-directory fields.
+	if err := db.Exec(`UPDATE customers c
+		SET address = latest.address,
+			city = latest.city,
+			latitude = latest.latitude,
+			longitude = latest.longitude
+		FROM (
+			SELECT DISTINCT ON (customer_id) customer_id, address, city, latitude, longitude
+			FROM orders
+			WHERE customer_id IS NOT NULL AND address <> ''
+			ORDER BY customer_id, created_at DESC, id DESC
+		) latest
+		WHERE c.id = latest.customer_id AND (c.address IS NULL OR c.address = '')`).Error; err != nil {
 		return nil, err
 	}
 
