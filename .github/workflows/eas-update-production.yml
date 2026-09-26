@@ -10,6 +10,7 @@ on:
     branches: [main]
     paths:
       - 'frontend/**'
+      - '.github/workflows/eas-update-production.yml'
 
 jobs:
   update:
@@ -19,15 +20,15 @@ jobs:
       run:
         working-directory: frontend
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
       - name: Check for EXPO_TOKEN
         run: |
           if [ -z "${{ secrets.EXPO_TOKEN }}" ]; then
             echo "Missing EXPO_TOKEN secret — create one at https://expo.dev/accounts/[account]/settings/access-tokens and add it as a repo secret. See https://docs.expo.dev/eas-update/github-actions"
             exit 1
           fi
-
-      - name: Checkout repository
-        uses: actions/checkout@v5
 
       - name: Setup Node
         uses: actions/setup-node@v6
