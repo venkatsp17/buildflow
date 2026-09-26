@@ -54,3 +54,9 @@ Join our community of developers creating universal apps.
 
 - [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
 - [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+
+## Production updates
+
+Pushes to `main` that change files under `frontend/` publish an EAS Update to
+the `production` channel through GitHub Actions. The repository must contain
+an Actions secret named `EXPO_TOKEN` for this workflow to run.
