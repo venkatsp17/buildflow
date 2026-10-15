@@ -1,5 +1,15 @@
 import { useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import {
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 
 import { AuthHeader } from '@/components/AuthHeader';
 import { colors, radius } from '@/constants/theme';
@@ -27,42 +37,54 @@ export default function Login() {
   const canSubmit = !!username && !!password && !isSubmitting;
 
   return (
-    <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
-      <AuthHeader title="Welcome back." subtitle="Log in to your account" />
+    <KeyboardAvoidingView
+      style={styles.screen}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={styles.content}
+        keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
+        <AuthHeader title="Welcome back." subtitle="Log in to your account" />
 
-      <View style={styles.card}>
-        {sessionExpired && (
-          <Text style={styles.sessionExpired}>Your session expired. Please log in again.</Text>
-        )}
+        <View style={styles.card}>
+          {sessionExpired && (
+            <Text style={styles.sessionExpired}>Your session expired. Please log in again.</Text>
+          )}
 
-        <Text style={styles.fieldLabel}>USERNAME</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="username"
-          autoCapitalize="none"
-          value={username}
-          onChangeText={setUsername}
-        />
+          <Text style={styles.fieldLabel}>USERNAME</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="username"
+            autoCapitalize="none"
+            value={username}
+            onChangeText={setUsername}
+          />
 
-        <Text style={styles.fieldLabel}>PASSWORD</Text>
-        <TextInput style={styles.input} placeholder="••••••••" secureTextEntry value={password} onChangeText={setPassword} />
+          <Text style={styles.fieldLabel}>PASSWORD</Text>
+          <TextInput style={styles.input} placeholder="••••••••" secureTextEntry value={password} onChangeText={setPassword} />
 
-        {error && <Text style={styles.error}>{error}</Text>}
+          {error && <Text style={styles.error}>{error}</Text>}
 
-        <Pressable
-          style={[styles.submitButton, !canSubmit && styles.submitButtonDisabled]}
-          onPress={onSubmit}
-          disabled={!canSubmit}
-        >
-          {isSubmitting ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.submitButtonText}>Sign In</Text>}
-        </Pressable>
-      </View>
-    </ScrollView>
+          <Pressable
+            style={[styles.submitButton, !canSubmit && styles.submitButtonDisabled]}
+            onPress={onSubmit}
+            disabled={!canSubmit}
+          >
+            {isSubmitting ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.submitButtonText}>Sign In</Text>}
+          </Pressable>
+        </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.background },
+  scrollView: { flex: 1 },
   content: { flexGrow: 1, paddingBottom: 32 },
   card: {
     marginTop: -20,
