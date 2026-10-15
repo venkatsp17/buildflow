@@ -1,8 +1,10 @@
 name: EAS Update (production)
 
-# Publishes an over-the-air update to installed production builds and to the
-# preview-channel internal build currently distributed to testers whenever
-# frontend code lands on main. Native changes still need a real EAS Build.
+# Publishes an over-the-air update to every installed build subscribed to
+# the "production" channel whenever frontend code lands on main — no app
+# store re-submission needed for JS/asset-only changes. Native changes
+# (new native modules, permissions, etc.) still need a real EAS Build +
+# store release, since an OTA update can't touch the native binary.
 on:
   push:
     branches: [main]
@@ -44,18 +46,10 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Publish production update
+      - name: Publish update
         run: |
           eas update \
             --channel production \
-            --environment production \
-            --non-interactive \
-            -m "${{ github.event.head_commit.message }}"
-
-      - name: Publish preview update
-        run: |
-          eas update \
-            --channel preview \
             --environment production \
             --non-interactive \
             -m "${{ github.event.head_commit.message }}"
