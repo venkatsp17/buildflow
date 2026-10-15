@@ -378,6 +378,27 @@ func findOrCreateCustomer(db *gorm.DB, name string, userID uint) (models.Custome
 	return customer, nil
 }
 
+func customerCodePrefix(city string) string {
+	switch strings.ToUpper(strings.TrimSpace(city)) {
+	case "DUBAI":
+		return "DXB"
+	case "ABU DHABI":
+		return "AUH"
+	case "SHARJAH":
+		return "SHJ"
+	}
+	letters := make([]rune, 0, 3)
+	for _, char := range strings.ToUpper(city) {
+		if char >= 'A' && char <= 'Z' {
+			letters = append(letters, char)
+			if len(letters) == 3 {
+				return string(letters)
+			}
+		}
+	}
+	return "CUS"
+}
+
 // findActiveProduct looks up an existing, active Product by ID. Products are
 // a super-user-curated catalog (see ProductHandler.Create) — order creation
 // can only reference what's already there, never invent a new entry on the
@@ -435,6 +456,13 @@ func (h *OrderHandler) Create(c *gin.Context) {
 	}).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to save customer address"})
 		return
+	}
+	if customer.CustomerCode == "" || strings.HasPrefix(customer.CustomerCode, "CUS-") {
+		customer.CustomerCode = fmt.Sprintf("%s-%05d", customerCodePrefix(req.City), customer.ID)
+		if err := h.DB.Model(&customer).Update("customer_code", customer.CustomerCode).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to save customer code"})
+			return
+		}
 	}
 
 	// Pricing always comes from the requesting user's assigned price list,

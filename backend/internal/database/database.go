@@ -2,6 +2,8 @@ package database
 
 import (
 	"errors"
+	"fmt"
+	"strings"
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -99,7 +101,50 @@ func Connect(databaseURL string) (*gorm.DB, error) {
 		return nil, err
 	}
 
+	if err := backfillCustomerCodes(db); err != nil {
+		return nil, err
+	}
+
 	return db, nil
+}
+
+// backfillCustomerCodes gives every customer a stable, readable public code.
+// The numeric primary key remains internal so existing order relationships do
+// not need to change. The city prefix makes the code recognizable to staff.
+func backfillCustomerCodes(db *gorm.DB) error {
+	var customers []models.Customer
+	if err := db.Where("customer_code IS NULL OR customer_code = ''").Order("id asc").Find(&customers).Error; err != nil {
+		return err
+	}
+	for _, customer := range customers {
+		code := fmt.Sprintf("%s-%05d", customerCityCode(customer.City), customer.ID)
+		if err := db.Model(&customer).Update("customer_code", code).Error; err != nil {
+			return err
+		}
+	}
+	return db.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_customers_customer_code ON customers (customer_code)").Error
+}
+
+func customerCityCode(city string) string {
+	normalized := strings.ToUpper(strings.TrimSpace(city))
+	switch normalized {
+	case "DUBAI":
+		return "DXB"
+	case "ABU DHABI":
+		return "AUH"
+	case "SHARJAH":
+		return "SHJ"
+	}
+	letters := make([]rune, 0, 3)
+	for _, char := range normalized {
+		if char >= 'A' && char <= 'Z' {
+			letters = append(letters, char)
+			if len(letters) == 3 {
+				return string(letters)
+			}
+		}
+	}
+	return "CUS"
 }
 
 // migrateUserIdentifierColumns handles the one-time move from email-based

@@ -26,6 +26,21 @@ import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { DatePickerInput } from './DatePickerInput';
 import { LeafletMapPreview } from './LeafletMapPreview';
 
+function displayCustomerCode(customer: Customer | null): string {
+  if (!customer) return '';
+  if (customer.customerCode) return customer.customerCode;
+
+  const normalizedCity = customer.city.trim().toUpperCase();
+  const prefix = normalizedCity === 'DUBAI'
+    ? 'DXB'
+    : normalizedCity === 'ABU DHABI'
+      ? 'AUH'
+      : normalizedCity === 'SHARJAH'
+        ? 'SHJ'
+        : (normalizedCity.replace(/[^A-Z]/g, '').slice(0, 3) || 'CUS');
+  return `${prefix}-${String(customer.id).padStart(5, '0')}`;
+}
+
 const DEFAULT_PRICE_LIST = 'Dubai Standard';
 
 const PRIORITIES = [
@@ -268,7 +283,7 @@ export function NewOrderModal({ visible, onClose, onCreated }: Props) {
             <TextInput
               style={[styles.input, styles.readOnlyInput]}
               placeholder="Select a customer to fill Customer ID"
-              value={selectedCustomer ? String(selectedCustomer.id) : ''}
+              value={displayCustomerCode(selectedCustomer)}
               editable={false}
             />
           </View>

@@ -102,6 +102,7 @@ export type Order = {
 
 export type Customer = {
   id: number;
+  customerCode: string;
   name: string;
   phone: string;
   email: string;
