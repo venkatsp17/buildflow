@@ -8,7 +8,7 @@ module.exports = {
     scheme: "buildflow",
     userInterfaceStyle: "automatic",
     ios: {
-      icon: "./assets/expo.icon",
+      icon: "./assets/images/icon.png",
     },
     android: {
       adaptiveIcon: {
@@ -32,9 +32,9 @@ module.exports = {
       [
         "expo-splash-screen",
         {
-          backgroundColor: "#208AEF",
-          image: "./assets/images/splash-icon.png",
-          imageWidth: 76,
+          backgroundColor: "#F4F5F7",
+          image: "./assets/images/icon.png",
+          imageWidth: 96,
         },
       ],
       "expo-secure-store",
