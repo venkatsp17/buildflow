@@ -51,6 +51,9 @@ func Connect(databaseURL string) (*gorm.DB, error) {
 	); err != nil {
 		return nil, err
 	}
+	if err := migrateMoneyPrecision(db); err != nil {
+		return nil, err
+	}
 
 	// Manufacturing is no longer an application role. Remove legacy device
 	// registrations first, then the obsolete accounts so their existing JWTs
@@ -106,6 +109,40 @@ func Connect(databaseURL string) (*gorm.DB, error) {
 	}
 
 	return db, nil
+}
+
+// AutoMigrate does not tighten an existing unrestricted NUMERIC column to the
+// precision in its model tag. Apply that model-defined change once per column.
+func migrateMoneyPrecision(db *gorm.DB) error {
+	columns := []struct {
+		model         any
+		field, column string
+		scale         int64
+	}{
+		{&models.Order{}, "Value", "value", 2},
+		{&models.OrderItem{}, "UnitPrice", "unit_price", 4},
+		{&models.PriceListItem{}, "UnitPrice", "unit_price", 4},
+	}
+	for _, target := range columns {
+		types, err := db.Migrator().ColumnTypes(target.model)
+		if err != nil {
+			return err
+		}
+		for _, column := range types {
+			if column.Name() != target.column {
+				continue
+			}
+			precision, scale, defined := column.DecimalSize()
+			if defined && precision == 18 && scale == target.scale {
+				break
+			}
+			if err := db.Migrator().AlterColumn(target.model, target.field); err != nil {
+				return err
+			}
+			break
+		}
+	}
+	return nil
 }
 
 // backfillCustomerCodes gives every customer a stable, readable public code.
