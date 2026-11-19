@@ -16,5 +16,5 @@ type PriceListItem struct {
 	PriceListID uint     `gorm:"not null;index:idx_pricelist_product,unique" json:"priceListId"`
 	ProductID   uint     `gorm:"not null;index:idx_pricelist_product,unique" json:"productId"`
 	Product     *Product `json:"product,omitempty"`
-	UnitPrice   float64  `gorm:"not null" json:"unitPrice"`
+	UnitPrice   float64  `gorm:"type:numeric(18,4);not null" json:"unitPrice"`
 }

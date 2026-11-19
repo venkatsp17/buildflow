@@ -3,6 +3,10 @@ Transform: AWS::Serverless-2016-10-31
 Description: Tracker backend — Gin API on Lambda behind an HTTP API, Postgres via Supabase.
 
 Parameters:
+  SupplierGstin:
+    Type: String
+    Default: ""
+    Description: Supplier GSTIN used for Indian GST billing.
   DatabaseUrl:
     Type: String
     NoEcho: true
@@ -67,6 +71,7 @@ Resources:
       Environment:
         Variables:
           DATABASE_URL: !Ref DatabaseUrl
+          SUPPLIER_GSTIN: !Ref SupplierGstin
           JWT_SECRET: !Sub '{{resolve:secretsmanager:${JWTSecret}}}'
       # No VpcConfig: the function isn't in a VPC, so it needs no NAT
       # Gateway to reach Supabase or any other public HTTPS endpoint

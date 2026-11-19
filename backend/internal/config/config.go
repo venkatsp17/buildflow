@@ -8,6 +8,7 @@ import (
 )
 
 type Config struct {
+	SupplierGSTIN      string
 	DatabaseURL        string
 	JWTSecret          string
 	Port               string
@@ -31,6 +32,7 @@ func Load() Config {
 	}
 
 	return Config{
+		SupplierGSTIN:      strings.ToUpper(strings.TrimSpace(os.Getenv("SUPPLIER_GSTIN"))),
 		DatabaseURL:        os.Getenv("DATABASE_URL"),
 		JWTSecret:          os.Getenv("JWT_SECRET"),
 		Port:               port,

@@ -11,6 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
+	"tracker-backend/internal/config"
 	"tracker-backend/internal/middleware"
 	"tracker-backend/internal/models"
 	"tracker-backend/internal/notify"
@@ -34,11 +35,21 @@ var orderSortOptions = map[string]string{
 }
 
 type OrderHandler struct {
-	DB *gorm.DB
+	DB            *gorm.DB
+	SupplierGSTIN string
 }
 
 func NewOrderHandler(db *gorm.DB) *OrderHandler {
-	return &OrderHandler{DB: db}
+	return &OrderHandler{DB: db, SupplierGSTIN: config.Load().SupplierGSTIN}
+}
+
+// BillingConfig provides the supplier identity needed to preview GST.
+func (h *OrderHandler) BillingConfig(c *gin.Context) {
+	if !models.ValidGSTIN(h.SupplierGSTIN) {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "supplier GSTIN is not configured"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"supplierGstin": h.SupplierGSTIN, "supplierStateCode": h.SupplierGSTIN[:2]})
 }
 
 // redactPriceList clears PriceListName for anyone but a manager — sales
@@ -341,22 +352,24 @@ func (h *OrderHandler) ManagerDashboard(c *gin.Context) {
 }
 
 type orderItemRequest struct {
-	ProductID   uint   `json:"productId" binding:"required"`
-	Description string `json:"description"`
-	Quantity    int    `json:"quantity" binding:"required,min=1"`
+	ProductID       uint    `json:"productId" binding:"required"`
+	Description     string  `json:"description"`
+	Quantity        int     `json:"quantity" binding:"required,min=1,max=100000"`
+	DiscountPercent float64 `json:"discountPercent" binding:"gte=0,lte=100"`
 }
 
 type createOrderRequest struct {
-	ClientName    string             `json:"clientName" binding:"required"`
-	City          string             `json:"city" binding:"required"`
-	Address       string             `json:"address"`
-	Latitude      *float64           `json:"latitude"`
-	Longitude     *float64           `json:"longitude"`
-	PriceListName string             `json:"priceListName" binding:"required"`
-	Urgency       string             `json:"urgency" binding:"required,oneof=low medium high urgent"`
-	Currency      string             `json:"currency"`
-	DueDate       string             `json:"dueDate" binding:"required"`
-	Items         []orderItemRequest `json:"items" binding:"required,min=1,dive"`
+	ClientName        string             `json:"clientName" binding:"required"`
+	City              string             `json:"city" binding:"required"`
+	Address           string             `json:"address"`
+	Latitude          *float64           `json:"latitude"`
+	Longitude         *float64           `json:"longitude"`
+	PriceListName     string             `json:"priceListName"`
+	PlaceOfSupplyCode string             `json:"placeOfSupplyCode" binding:"required"`
+	Urgency           string             `json:"urgency" binding:"required,oneof=low medium high urgent"`
+	Currency          string             `json:"currency"`
+	DueDate           string             `json:"dueDate" binding:"required"`
+	Items             []orderItemRequest `json:"items" binding:"required,min=1,max=100,dive"`
 }
 
 // findOrCreateCustomer looks up a Customer by case-insensitive exact name
@@ -422,6 +435,19 @@ func (h *OrderHandler) Create(c *gin.Context) {
 		return
 	}
 
+	if !models.ValidGSTIN(h.SupplierGSTIN) {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "supplier GSTIN is not configured"})
+		return
+	}
+	taxMode, err := models.TaxMode(h.SupplierGSTIN[:2], req.PlaceOfSupplyCode)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if req.Currency != "" && req.Currency != "₹" && req.Currency != "INR" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "GST orders must use INR"})
+		return
+	}
 	dueDate, err := time.Parse("2006-01-02", req.DueDate)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "dueDate must be in YYYY-MM-DD format"})
@@ -439,38 +465,18 @@ func (h *OrderHandler) Create(c *gin.Context) {
 		return
 	}
 
-	customer, err := findOrCreateCustomer(h.DB, req.ClientName, userID)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to resolve customer"})
-		return
-	}
-
-	// Keep the customer directory's delivery location reusable. This makes a
-	// later order a select-only customer flow: choosing the customer supplies
-	// the address, city and map coordinates without retyping them.
-	if err := h.DB.Model(&customer).Updates(map[string]any{
-		"address":   strings.TrimSpace(req.Address),
-		"city":      strings.TrimSpace(req.City),
-		"latitude":  req.Latitude,
-		"longitude": req.Longitude,
-	}).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to save customer address"})
-		return
-	}
-	if customer.CustomerCode == "" || strings.HasPrefix(customer.CustomerCode, "CUS-") {
-		customer.CustomerCode = fmt.Sprintf("%s-%05d", customerCodePrefix(req.City), customer.ID)
-		if err := h.DB.Model(&customer).Update("customer_code", customer.CustomerCode).Error; err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to save customer code"})
-			return
-		}
-	}
-
 	// Pricing always comes from the requesting user's assigned price list,
 	// never from client input — sales reps can't set or edit prices.
-	priceByProductID := priceListLookup(h.DB, userID)
-
+	var assignedList models.PriceList
+	if err := h.DB.Preload("Items").Joins("JOIN users ON users.price_list_id = price_lists.id").Where("users.id = ?", userID).First(&assignedList).Error; err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "assign a price list before creating orders"})
+		return
+	}
+	priceByProductID := make(map[uint]float64, len(assignedList.Items))
+	for _, item := range assignedList.Items {
+		priceByProductID[item.ProductID] = item.UnitPrice
+	}
 	items := make([]models.OrderItem, len(req.Items))
-	var value float64
 	for i, item := range req.Items {
 		product, err := findActiveProduct(h.DB, item.ProductID)
 		if err != nil {
@@ -481,7 +487,11 @@ func (h *OrderHandler) Create(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to resolve product"})
 			return
 		}
-		unitPrice := priceByProductID[product.ID]
+		unitPrice, hasPrice := priceByProductID[product.ID]
+		if !hasPrice {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "a selected product has no price in your assigned price list"})
+			return
+		}
 		items[i] = models.OrderItem{
 			ProductID:   &product.ID,
 			ProductName: product.Name,
@@ -490,28 +500,53 @@ func (h *OrderHandler) Create(c *gin.Context) {
 			Unit:        product.Unit,
 			UnitPrice:   unitPrice,
 		}
-		value += float64(item.Quantity) * unitPrice
+		if err := items[i].CalculateBilling(product, item.DiscountPercent, taxMode); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": product.Name + ": " + err.Error()})
+			return
+		}
 	}
 
 	order := models.Order{
-		TicketNumber:  fmt.Sprintf("TKT-%d", ticketSeq),
-		CustomerID:    &customer.ID,
-		ClientName:    customer.Name,
-		City:          req.City,
-		Address:       req.Address,
-		Latitude:      req.Latitude,
-		Longitude:     req.Longitude,
-		PriceListName: req.PriceListName,
-		Status:        models.OrderStatusPending,
-		Urgency:       models.OrderUrgency(req.Urgency),
-		Value:         value,
-		Currency:      currency,
-		DueDate:       dueDate,
-		CreatedByID:   userID,
-		Items:         items,
+		TicketNumber:       fmt.Sprintf("TKT-%d", ticketSeq),
+		City:               req.City,
+		Address:            req.Address,
+		Latitude:           req.Latitude,
+		Longitude:          req.Longitude,
+		PriceListName:      assignedList.Name,
+		CalculationVersion: 1,
+		SupplierGSTIN:      h.SupplierGSTIN,
+		SupplierStateCode:  h.SupplierGSTIN[:2],
+		PlaceOfSupplyCode:  req.PlaceOfSupplyCode,
+		TaxMode:            taxMode,
+		Status:             models.OrderStatusPending,
+		Urgency:            models.OrderUrgency(req.Urgency),
+		Currency:           currency,
+		DueDate:            dueDate,
+		CreatedByID:        userID,
+		Items:              items,
 	}
 
-	if err := h.DB.Create(&order).Error; err != nil {
+	order.CalculateTotals()
+	if err := h.DB.Transaction(func(tx *gorm.DB) error {
+		customer, err := findOrCreateCustomer(tx, req.ClientName, userID)
+		if err != nil {
+			return err
+		}
+		order.CustomerID, order.ClientName, order.RecipientGSTIN = &customer.ID, customer.Name, customer.GSTNo
+		if err := tx.Model(&customer).Updates(map[string]any{
+			"address": strings.TrimSpace(req.Address), "city": strings.TrimSpace(req.City),
+			"latitude": req.Latitude, "longitude": req.Longitude,
+		}).Error; err != nil {
+			return err
+		}
+		if customer.CustomerCode == "" || strings.HasPrefix(customer.CustomerCode, "CUS-") {
+			code := fmt.Sprintf("%s-%05d", customerCodePrefix(req.City), customer.ID)
+			if err := tx.Model(&customer).Update("customer_code", code).Error; err != nil {
+				return err
+			}
+		}
+		return tx.Create(&order).Error
+	}); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create order"})
 		return
 	}

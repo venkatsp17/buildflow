@@ -53,13 +53,27 @@ func (h *PriceListHandler) Detail(c *gin.Context) {
 }
 
 type priceListItemRequest struct {
-	ProductID uint    `json:"productId" binding:"required"`
-	UnitPrice float64 `json:"unitPrice" binding:"required,gte=0"`
+	ProductID uint     `json:"productId" binding:"required"`
+	UnitPrice *float64 `json:"unitPrice" binding:"required"`
 }
 
 type createPriceListRequest struct {
 	Name  string                 `json:"name" binding:"required"`
 	Items []priceListItemRequest `json:"items" binding:"required,min=1,dive"`
+}
+
+func (req createPriceListRequest) validate() error {
+	seen := make(map[uint]bool, len(req.Items))
+	for _, item := range req.Items {
+		if item.UnitPrice == nil || !models.ValidUnitPrice(*item.UnitPrice) {
+			return errors.New("pre-tax unit prices must be between 0 and 1000000 with up to four decimals")
+		}
+		if seen[item.ProductID] {
+			return errors.New("each product can appear only once in a price list")
+		}
+		seen[item.ProductID] = true
+	}
+	return nil
 }
 
 // Create creates a new price list with its per-product prices.
@@ -71,18 +85,18 @@ func (h *PriceListHandler) Create(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-
-	priceList := models.PriceList{Name: req.Name, CreatedByID: userID}
-	if err := h.DB.Create(&priceList).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create price list"})
+	if err := req.validate(); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
+	priceList := models.PriceList{Name: req.Name, CreatedByID: userID}
 	items := make([]models.PriceListItem, len(req.Items))
 	for i, item := range req.Items {
-		items[i] = models.PriceListItem{PriceListID: priceList.ID, ProductID: item.ProductID, UnitPrice: item.UnitPrice}
+		items[i] = models.PriceListItem{ProductID: item.ProductID, UnitPrice: *item.UnitPrice}
 	}
-	if err := h.DB.Create(&items).Error; err != nil {
+	priceList.Items = items
+	if err := h.DB.Transaction(func(tx *gorm.DB) error { return tx.Create(&priceList).Error }); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create price list items"})
 		return
 	}
@@ -114,6 +128,10 @@ func (h *PriceListHandler) Update(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	if err := req.validate(); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 
 	err := h.DB.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Model(&priceList).Update("name", req.Name).Error; err != nil {
@@ -124,7 +142,7 @@ func (h *PriceListHandler) Update(c *gin.Context) {
 		}
 		items := make([]models.PriceListItem, len(req.Items))
 		for i, item := range req.Items {
-			items[i] = models.PriceListItem{PriceListID: priceList.ID, ProductID: item.ProductID, UnitPrice: item.UnitPrice}
+			items[i] = models.PriceListItem{PriceListID: priceList.ID, ProductID: item.ProductID, UnitPrice: *item.UnitPrice}
 		}
 		return tx.Create(&items).Error
 	})

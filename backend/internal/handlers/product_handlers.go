@@ -76,9 +76,12 @@ func (h *ProductHandler) List(c *gin.Context) {
 }
 
 type createProductRequest struct {
-	Name        string `json:"name" binding:"required"`
-	Unit        string `json:"unit" binding:"required"`
-	Description string `json:"description"`
+	Name        string   `json:"name" binding:"required"`
+	Unit        string   `json:"unit" binding:"required"`
+	Description string   `json:"description"`
+	HSNCode     string   `json:"hsnCode"`
+	GSTRate     *float64 `json:"gstRate" binding:"required"`
+	TaxCategory string   `json:"taxCategory" binding:"required,oneof=taxable nil_rated exempt non_gst"`
 }
 
 // Create adds a new product to the shared catalog. Super-user only (see
@@ -105,7 +108,11 @@ func (h *ProductHandler) Create(c *gin.Context) {
 		return
 	}
 
-	product := models.Product{Name: req.Name, Unit: req.Unit, Description: req.Description, CreatedByID: userID, Active: true}
+	product := models.Product{Name: req.Name, Unit: req.Unit, Description: req.Description, CreatedByID: userID, Active: true, HSNCode: req.HSNCode, GSTRate: req.GSTRate, TaxCategory: req.TaxCategory}
+	if err := product.ValidateTax(); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	if err := h.DB.Create(&product).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create product"})
 		return

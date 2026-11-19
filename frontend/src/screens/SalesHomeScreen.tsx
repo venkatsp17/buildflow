@@ -38,13 +38,17 @@ export function SalesHomeScreen() {
   const handleDuplicate = async () => {
     if (!token || orders.length === 0) return;
     const source = orders[0];
+    if (!source.placeOfSupplyCode) {
+      setIsNewOrderOpen(true);
+      return;
+    }
     setIsDuplicating(true);
     try {
       const { order: newOrder } = await createOrder(token, {
         clientName: source.clientName,
         city: source.city,
         address: source.address,
-        priceListName: source.priceListName,
+        placeOfSupplyCode: source.placeOfSupplyCode,
         urgency: source.urgency,
         currency: source.currency,
         dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
@@ -54,6 +58,7 @@ export function SalesHomeScreen() {
             productId: item.productId as number,
             description: item.description,
             quantity: item.quantity,
+            discountPercent: item.discountPercent ?? 0,
           })),
       });
       await Promise.all([reload(), reloadPriority()]);

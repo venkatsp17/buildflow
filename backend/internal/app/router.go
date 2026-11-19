@@ -30,6 +30,7 @@ func NewRouter(db *gorm.DB, jwtSecret string, corsAllowedOrigins []string) *gin.
 	pushTokenHandler := handlers.NewPushTokenHandler(db)
 
 	router.GET("/health", health.Health)
+	router.GET("/billing-config", middleware.RequireAuth(db, jwtSecret), orderHandler.BillingConfig)
 
 	authGroup := router.Group("/auth")
 	authGroup.POST("/login", authHandler.Login)

@@ -14,6 +14,7 @@ import {
 
 import {
   createOrder,
+  getBillingConfig,
   searchCustomers,
   searchProducts,
   type Customer,
@@ -21,6 +22,7 @@ import {
   type Product,
 } from '@/api/client';
 import { useAuth } from '@/auth/AuthContext';
+import { gstStates, previewLine, taxModeFor } from '@/utils/billing';
 import { colors, radius } from '@/constants/theme';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { DatePickerInput } from './DatePickerInput';
@@ -41,7 +43,6 @@ function displayCustomerCode(customer: Customer | null): string {
   return `${prefix}-${String(customer.id).padStart(5, '0')}`;
 }
 
-const DEFAULT_PRICE_LIST = 'Dubai Standard';
 
 const PRIORITIES = [
   { value: 'urgent', label: 'Urgent' },
@@ -56,17 +57,18 @@ type ItemDraft = {
   quantity: string;
   unitPrice: number | null;
   description: string;
+  discountPercent: string;
+  gstRate: number | null;
+  taxCategory: string;
+  hsnCode: string;
 };
 
 function emptyItem(): ItemDraft {
-  return { productId: null, productName: '', quantity: '', unitPrice: null, description: '' };
+  return { productId: null, productName: '', quantity: '', unitPrice: null, description: '', discountPercent: '0', gstRate: null, taxCategory: '', hsnCode: '' };
 }
 
 const CURRENCY = '₹';
 
-function lineTotal(item: ItemDraft): number {
-  return (Number(item.quantity) || 0) * (item.unitPrice ?? 0);
-}
 
 type Props = {
   visible: boolean;
@@ -95,6 +97,23 @@ export function NewOrderModal({ visible, onClose, onCreated }: Props) {
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [billingConfig, setBillingConfig] = useState<{ supplierGstin: string; supplierStateCode: string } | null>(null);
+  const [billingError, setBillingError] = useState<string | null>(null);
+  const [placeOfSupplyCode, setPlaceOfSupplyCode] = useState('');
+  const [showStates, setShowStates] = useState(false);
+
+  useEffect(() => {
+    if (!visible || !token) return;
+    let cancelled = false;
+    setBillingConfig(null);
+    setBillingError(null);
+    getBillingConfig(token).then(config => {
+      if (!cancelled) setBillingConfig(config);
+    }).catch(err => {
+      if (!cancelled) setBillingError(err instanceof Error ? err.message : 'Unable to load GST settings');
+    });
+    return () => { cancelled = true; };
+  }, [visible, token]);
 
   const debouncedClientName = useDebouncedValue(clientName, 300);
   const activeProductQuery = activeProductIndex !== null ? items[activeProductIndex]?.productName ?? '' : '';
@@ -139,10 +158,14 @@ export function NewOrderModal({ visible, onClose, onCreated }: Props) {
     };
   }, [token, activeProductIndex, debouncedProductQuery]);
 
-  const hasValidItems = items.some((item) => item.productId && Number(item.quantity) > 0);
-  const canSubmit =
-    !!selectedCustomer && !!address.trim() && !!dueDate && !!city.trim() && hasValidItems && !isSubmitting;
-  const orderTotal = items.reduce((sum, item) => sum + lineTotal(item), 0);
+  const taxMode = taxModeFor(billingConfig?.supplierStateCode ?? '', placeOfSupplyCode);
+  const previews = items.map(item => previewLine(item.quantity, item.unitPrice, item.discountPercent, item.gstRate, taxMode));
+  const hasValidItems = items.length > 0 && items.length <= 100 && items.every((item, index) =>
+    !!item.productId && !!previews[index] && !!item.taxCategory && (item.taxCategory !== 'taxable' || !!item.hsnCode));
+  const canSubmit = !!selectedCustomer && !!address.trim() && !!dueDate && !!city.trim() && hasValidItems && !isSubmitting;
+  const sumAmount = (field: keyof NonNullable<typeof previews[number]>) =>
+    previews.reduce((sum, item) => sum + Math.round((item?.[field] ?? 0) * 100), 0) / 100;
+  const orderTotal = sumAmount('lineTotal');
   const totalUnits = items.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
 
   const resetForm = () => {
@@ -158,6 +181,8 @@ export function NewOrderModal({ visible, onClose, onCreated }: Props) {
     setSelectedLocation(null);
     setCity('');
     setError(null);
+    setPlaceOfSupplyCode('');
+    setShowStates(false);
   };
 
   const handleClose = () => {
@@ -174,7 +199,7 @@ export function NewOrderModal({ visible, onClose, onCreated }: Props) {
   };
 
   const handleSubmit = async () => {
-    if (!token || !dueDate) return;
+    if (!token || !dueDate || !canSubmit) return;
     setIsSubmitting(true);
     setError(null);
     try {
@@ -184,7 +209,7 @@ export function NewOrderModal({ visible, onClose, onCreated }: Props) {
         address: address.trim() || undefined,
         latitude: selectedLocation?.lat,
         longitude: selectedLocation?.lon,
-        priceListName: DEFAULT_PRICE_LIST,
+        placeOfSupplyCode,
         urgency,
         dueDate,
         items: items
@@ -193,6 +218,7 @@ export function NewOrderModal({ visible, onClose, onCreated }: Props) {
             productId: item.productId as number,
             description: item.description.trim() || undefined,
             quantity: Number(item.quantity),
+            discountPercent: Number(item.discountPercent || 0),
           })),
       });
       resetForm();
@@ -299,6 +325,20 @@ export function NewOrderModal({ visible, onClose, onCreated }: Props) {
             />
           </View>
 
+          <Text style={styles.label}>Place of Supply</Text>
+          <Pressable style={styles.inputWrap} onPress={() => setShowStates(value => !value)}>
+            <Text style={styles.input}>{gstStates.find(([code]) => code === placeOfSupplyCode)?.[1] ?? 'Select delivery state / union territory'}</Text>
+            <Ionicons name="chevron-down" size={16} color={colors.textMuted} />
+          </Pressable>
+          {showStates && <View style={styles.suggestionsBox}>
+            {gstStates.map(([code, name]) => <Pressable key={code} style={styles.suggestionRow} onPress={() => {
+              setPlaceOfSupplyCode(code);
+              setShowStates(false);
+            }}><Text style={styles.suggestionText}>{name} ({code})</Text></Pressable>)}
+          </View>}
+          {billingConfig && <Text style={styles.customerAddress}>Supplier GSTIN {billingConfig.supplierGstin}</Text>}
+          {billingError && <Text style={styles.error}>{billingError}</Text>}
+
           <Text style={styles.label}>Due Date</Text>
           <DatePickerInput value={dueDate} onChange={setDueDate} placeholder="Select date" />
 
@@ -349,7 +389,7 @@ export function NewOrderModal({ visible, onClose, onCreated }: Props) {
                     // confirmed catalog selection — it must come from picking
                     // a suggestion below, never be typed in directly (there's
                     // no way to order a product that isn't in the catalog).
-                    updateItem(index, { productName: text, productId: null, unitPrice: null });
+                    updateItem(index, { productName: text, productId: null, unitPrice: null, gstRate: null, taxCategory: '', hsnCode: '' });
                     setActiveProductIndex(index);
                   }}
                   onFocus={() => setActiveProductIndex(index)}
@@ -367,6 +407,9 @@ export function NewOrderModal({ visible, onClose, onCreated }: Props) {
                           productName: product.name,
                           description: product.description || item.description,
                           unitPrice: product.unitPrice ?? null,
+                          gstRate: product.gstRate,
+                          taxCategory: product.taxCategory,
+                          hsnCode: product.hsnCode,
                         });
                         setActiveProductIndex(null);
                         setProductResults([]);
@@ -398,11 +441,26 @@ export function NewOrderModal({ visible, onClose, onCreated }: Props) {
                 <View style={[styles.priceDisplay, styles.qtyInput]}>
                   <Text style={item.unitPrice != null ? styles.priceDisplayValue : styles.priceDisplayEmpty}>
                     {item.unitPrice != null
-                      ? `${CURRENCY}${item.unitPrice.toLocaleString()} / unit`
+                      ? `${CURRENCY}${item.unitPrice.toLocaleString()} / unit before GST`
                       : 'Pick a product for price'}
                   </Text>
                 </View>
               </View>
+              <Text style={styles.itemLabel}>Discount (%)</Text>
+              <TextInput
+                style={[styles.input, styles.plainInput]}
+                accessibilityLabel={`Discount percentage for item ${index + 1}`}
+                placeholder="0"
+                value={item.discountPercent}
+                onChangeText={text => {
+                  if (/^\d*(\.\d{0,4})?$/.test(text)) updateItem(index, { discountPercent: text });
+                }}
+                keyboardType="decimal-pad"
+              />
+              {Number(item.discountPercent) > 100 && <Text style={styles.itemWarning}>Discount must be 0–100%</Text>}
+              {!!item.productId && (item.unitPrice == null || item.gstRate == null || !item.taxCategory ||
+                (item.taxCategory === 'taxable' && !item.hsnCode)) &&
+                <Text style={styles.itemWarning}>This product needs a price and GST configuration before ordering.</Text>}
               <TextInput
                 style={[styles.input, styles.plainInput, styles.notesFullInput]}
                 placeholder="Specs / notes"
@@ -410,13 +468,16 @@ export function NewOrderModal({ visible, onClose, onCreated }: Props) {
                 onChangeText={(text) => updateItem(index, { description: text })}
               />
 
-              {lineTotal(item) > 0 && (
+              {previews[index] && <View>
+                <Text style={styles.itemLineTotal}>Before GST {CURRENCY}{previews[index]!.grossAmount.toFixed(2)}</Text>
+                <Text style={styles.itemLineTotal}>Discount {CURRENCY}{previews[index]!.discountAmount.toFixed(2)} · Taxable {CURRENCY}{previews[index]!.taxableAmount.toFixed(2)}</Text>
                 <Text style={styles.itemLineTotal}>
-                  {item.quantity || 0} × {CURRENCY}
-                  {item.unitPrice} = {CURRENCY}
-                  {lineTotal(item).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                  {taxMode === 'igst' ? `IGST ${item.gstRate}%: ${CURRENCY}${previews[index]!.igstAmount.toFixed(2)}` :
+                    `CGST ${(item.gstRate ?? 0) / 2}%: ${CURRENCY}${previews[index]!.cgstAmount.toFixed(2)} · ${taxMode === 'cgst_utgst' ? 'UTGST' : 'SGST'} ${(item.gstRate ?? 0) / 2}%: ${CURRENCY}${(previews[index]!.sgstAmount + previews[index]!.utgstAmount).toFixed(2)}`}
                 </Text>
-              )}
+                <Text style={styles.itemLineTotal}>Line total {CURRENCY}{previews[index]!.lineTotal.toFixed(2)}</Text>
+              </View>}
+
             </View>
           ))}
 
@@ -425,7 +486,13 @@ export function NewOrderModal({ visible, onClose, onCreated }: Props) {
             <Text style={styles.addItemText}>Add Another Product</Text>
           </Pressable>
 
-          {orderTotal > 0 && (
+          {hasValidItems && <View>
+            <Text style={styles.itemLineTotal}>Subtotal {CURRENCY}{sumAmount('grossAmount').toFixed(2)}</Text>
+            <Text style={styles.itemLineTotal}>Discount {CURRENCY}{sumAmount('discountAmount').toFixed(2)}</Text>
+            <Text style={styles.itemLineTotal}>Taxable {CURRENCY}{sumAmount('taxableAmount').toFixed(2)}</Text>
+            <Text style={styles.itemLineTotal}>GST {CURRENCY}{(sumAmount('cgstAmount') + sumAmount('sgstAmount') + sumAmount('utgstAmount') + sumAmount('igstAmount')).toFixed(2)}</Text>
+          </View>}
+          {hasValidItems && (
             <View style={styles.totalCard}>
               <Text style={styles.totalCardLabel}>Total · {totalUnits} units</Text>
               <Text style={styles.totalCardValue}>

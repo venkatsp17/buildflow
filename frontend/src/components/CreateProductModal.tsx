@@ -12,7 +12,7 @@ import {
   View,
 } from 'react-native';
 
-import { createProduct, type Product } from '@/api/client';
+import { createProduct, type Product, type TaxCategory } from '@/api/client';
 import { useAuth } from '@/auth/AuthContext';
 import { colors, radius } from '@/constants/theme';
 
@@ -27,6 +27,9 @@ export function CreateProductModal({ visible, onClose, onCreated }: Props) {
   const [name, setName] = useState('');
   const [unit, setUnit] = useState('');
   const [description, setDescription] = useState('');
+  const [hsnCode, setHSNCode] = useState('');
+  const [gstRate, setGSTRate] = useState('');
+  const [taxCategory, setTaxCategory] = useState<TaxCategory>('taxable');
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -35,16 +38,22 @@ export function CreateProductModal({ visible, onClose, onCreated }: Props) {
       setName('');
       setUnit('');
       setDescription('');
+      setHSNCode('');
+      setGSTRate('');
+      setTaxCategory('taxable');
       setError(null);
     }
   }, [visible]);
 
   if (!visible) return null;
 
-  const canSubmit = !!name.trim() && !!unit.trim() && !isSubmitting;
+  const validHSN = /^(\d{4}|\d{6}|\d{8})$/.test(hsnCode);
+  const validRate = /^\d+(\.\d{0,4})?$/.test(gstRate) && Number(gstRate) <= 100;
+  const validTax = taxCategory === 'taxable' ? validHSN && validRate && Number(gstRate) > 0 : Number(gstRate) === 0 && validRate && (!hsnCode || validHSN);
+  const canSubmit = !!name.trim() && !!unit.trim() && validTax && !isSubmitting;
 
   const handleSubmit = async () => {
-    if (!token) return;
+    if (!token || !canSubmit) return;
     setIsSubmitting(true);
     setError(null);
     try {
@@ -52,6 +61,9 @@ export function CreateProductModal({ visible, onClose, onCreated }: Props) {
         name: name.trim(),
         unit: unit.trim(),
         description: description.trim() || undefined,
+        hsnCode: hsnCode || undefined,
+        gstRate: Number(gstRate),
+        taxCategory,
       });
       onCreated(product);
     } catch (err) {
@@ -81,6 +93,23 @@ export function CreateProductModal({ visible, onClose, onCreated }: Props) {
 
           <Text style={styles.fieldLabel}>UNIT</Text>
           <TextInput style={styles.input} placeholder="e.g. bags, tons, m3" value={unit} onChangeText={setUnit} />
+
+          <Text style={styles.fieldLabel}>HSN CODE</Text>
+          <TextInput style={styles.input} placeholder="4, 6 or 8 digits" value={hsnCode}
+            onChangeText={text => setHSNCode(text.replace(/[^0-9]/g, '').slice(0, 8))} keyboardType="number-pad" />
+          <Text style={styles.fieldLabel}>TAX CATEGORY</Text>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+            {(['taxable', 'nil_rated', 'exempt', 'non_gst'] as const).map(category => (
+              <Pressable key={category} style={[styles.input, { backgroundColor: category === taxCategory ? colors.amberMuted : colors.card }]}
+                onPress={() => { setTaxCategory(category); setGSTRate(category === 'taxable' ? '' : '0'); }}>
+                <Text style={{ color: colors.text }}>{category.replace('_', ' ')}</Text>
+              </Pressable>
+            ))}
+          </View>
+          <Text style={styles.fieldLabel}>GST RATE (%)</Text>
+          <TextInput style={styles.input} placeholder="Enter applicable GST rate" value={gstRate}
+            onChangeText={text => { if (/^\d*(\.\d{0,4})?$/.test(text)) setGSTRate(text); }} keyboardType="decimal-pad"
+            editable={taxCategory === 'taxable'} />
 
           <Text style={styles.fieldLabel}>DESCRIPTION (OPTIONAL)</Text>
           <TextInput

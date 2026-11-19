@@ -66,9 +66,31 @@ export function resetPassword(token: string, newPassword: string): Promise<{ mes
   });
 }
 
+export type TaxCategory = 'taxable' | 'nil_rated' | 'exempt' | 'non_gst';
+
+export function getBillingConfig(token: string): Promise<{ supplierGstin: string; supplierStateCode: string }> {
+  return request('/billing-config', { headers: { Authorization: `Bearer ${token}` } });
+}
+
 export type OrderItem = {
   id: number;
   orderId: number;
+  hsnCode: string;
+  taxCategory: TaxCategory;
+  gstRate: number;
+  discountPercent: number;
+  grossAmount: number;
+  discountAmount: number;
+  taxableAmount: number;
+  cgstRate: number;
+  sgstRate: number;
+  utgstRate: number;
+  igstRate: number;
+  cgstAmount: number;
+  sgstAmount: number;
+  utgstAmount: number;
+  igstAmount: number;
+  lineTotal: number;
   productId?: number;
   productName: string;
   description: string;
@@ -80,6 +102,20 @@ export type OrderItem = {
 export type Order = {
   id: number;
   ticketNumber: string;
+  calculationVersion: number;
+  supplierGstin: string;
+  supplierStateCode: string;
+  recipientGstin: string;
+  placeOfSupplyCode: string;
+  taxMode: string;
+  subtotal: number;
+  discountAmount: number;
+  taxableTotal: number;
+  cgstTotal: number;
+  sgstTotal: number;
+  utgstTotal: number;
+  igstTotal: number;
+  taxTotal: number;
   customerId?: number;
   clientName: string;
   city: string;
@@ -120,6 +156,9 @@ export type Product = {
   description: string;
   active: boolean;
   unitPrice?: number;
+  hsnCode: string;
+  gstRate: number | null;
+  taxCategory: TaxCategory;
 };
 
 export type GeocodeResult = {
@@ -148,6 +187,9 @@ export function searchProducts(
 }
 
 export type CreateProductInput = {
+  hsnCode?: string;
+  gstRate: number;
+  taxCategory: TaxCategory;
   name: string;
   unit: string;
   description?: string;
@@ -264,11 +306,12 @@ export type CreateOrderInput = {
   address?: string;
   latitude?: number;
   longitude?: number;
-  priceListName: string;
+  priceListName?: string;
+  placeOfSupplyCode: string;
   urgency: string;
   currency?: string;
   dueDate: string;
-  items: { productId: number; description?: string; quantity: number }[];
+  items: { productId: number; description?: string; quantity: number; discountPercent?: number }[];
 };
 
 export function createOrder(token: string, input: CreateOrderInput): Promise<{ order: Order }> {

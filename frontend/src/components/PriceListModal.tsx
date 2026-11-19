@@ -95,7 +95,8 @@ export function PriceListModal({ visible, onClose, onSaved, editing }: Props) {
     setItems((prev) => prev.filter((_, i) => i !== index));
   };
 
-  const hasValidItems = items.some((item) => item.productId && Number(item.unitPrice) > 0);
+  const hasValidItems = items.length > 0 && items.every(item => item.productId && /^\d+(\.\d{0,4})?$/.test(item.unitPrice) && Number(item.unitPrice) <= 1000000) &&
+    new Set(items.map(item => item.productId)).size === items.length;
   const canSubmit = !!name.trim() && hasValidItems && !isSubmitting;
 
   const handleClose = () => {
@@ -103,15 +104,13 @@ export function PriceListModal({ visible, onClose, onSaved, editing }: Props) {
   };
 
   const handleSubmit = async () => {
-    if (!token) return;
+    if (!token || !canSubmit) return;
     setIsSubmitting(true);
     setError(null);
     try {
       const input = {
         name: name.trim(),
-        items: items
-          .filter((item) => item.productId && Number(item.unitPrice) > 0)
-          .map((item) => ({ productId: item.productId as number, unitPrice: Number(item.unitPrice) })),
+        items: items.map(item => ({ productId: item.productId as number, unitPrice: Number(item.unitPrice) })),
       };
       const { priceList } = editing
         ? await updatePriceList(token, editing.id, input)
@@ -203,9 +202,9 @@ export function PriceListModal({ visible, onClose, onSaved, editing }: Props) {
 
               <TextInput
                 style={[styles.input, styles.plainInput, styles.priceInput]}
-                placeholder="Unit price (₹)"
+                placeholder="Pre-tax unit price (₹)"
                 value={item.unitPrice}
-                onChangeText={(text) => updateItem(index, { unitPrice: text.replace(/[^0-9.]/g, '') })}
+                onChangeText={text => { if (/^\d*(\.\d{0,4})?$/.test(text)) updateItem(index, { unitPrice: text }); }}
                 keyboardType="decimal-pad"
               />
               {!item.productId && !!item.productName && (

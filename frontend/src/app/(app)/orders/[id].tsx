@@ -8,6 +8,7 @@ import { useAuth } from '@/auth/AuthContext';
 import { OrderProgressStepper } from '@/components/OrderProgressStepper';
 import { StatusActionModal } from '@/components/StatusActionModal';
 import { colors, radius, statusStyle, urgencyStyle } from '@/constants/theme';
+import { gstStates } from '@/utils/billing';
 import { formatMoney } from '@/utils/format';
 
 function formatDate(dueDate: string): string {
@@ -78,13 +79,17 @@ export default function OrderDetail() {
 
   const handleDuplicate = async () => {
     if (!token || !order) return;
+    if (!order.placeOfSupplyCode) {
+      Alert.alert('Delivery state required', 'Create a new order and select the place of supply for this older order.');
+      return;
+    }
     setIsDuplicating(true);
     try {
       const { order: newOrder } = await createOrder(token, {
         clientName: order.clientName,
         city: order.city,
         address: order.address,
-        priceListName: order.priceListName,
+        placeOfSupplyCode: order.placeOfSupplyCode,
         urgency: order.urgency,
         currency: order.currency,
         dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
@@ -94,6 +99,7 @@ export default function OrderDetail() {
             productId: item.productId as number,
             description: item.description,
             quantity: item.quantity,
+            discountPercent: item.discountPercent ?? 0,
           })),
       });
       Alert.alert(
@@ -223,14 +229,34 @@ export default function OrderDetail() {
               <Text style={styles.productMeta}>
                 {item.quantity} {item.unit} @ {order.currency} {formatMoney(item.unitPrice)}/unit
               </Text>
+              {order.calculationVersion > 0 && <>
+                {!!item.hsnCode && <Text style={styles.productDescription}>HSN {item.hsnCode}</Text>}
+                <Text style={styles.productDescription}>Discount {item.discountPercent}% · {order.currency} {formatMoney(item.discountAmount)}</Text>
+                <Text style={styles.productDescription}>Taxable {order.currency} {formatMoney(item.taxableAmount)}</Text>
+                {order.taxMode === 'igst' ?
+                  <Text style={styles.productDescription}>IGST {item.igstRate}% · {order.currency} {formatMoney(item.igstAmount)}</Text> :
+                  <>
+                    <Text style={styles.productDescription}>CGST {item.cgstRate}% · {order.currency} {formatMoney(item.cgstAmount)}</Text>
+                    <Text style={styles.productDescription}>{order.taxMode === 'cgst_utgst' ? 'UTGST' : 'SGST'} {item.sgstRate || item.utgstRate}% · {order.currency} {formatMoney(item.sgstAmount + item.utgstAmount)}</Text>
+                  </>}
+              </>}
               {!!item.description && <Text style={styles.productDescription}>{item.description}</Text>}
             </View>
             <Text style={styles.productTotal}>
-              {order.currency} {formatMoney(item.quantity * item.unitPrice)}
+              {order.currency} {formatMoney(order.calculationVersion > 0 ? item.lineTotal : item.quantity * item.unitPrice)}
             </Text>
           </View>
         ))}
 
+        {order.calculationVersion > 0 && <View style={{ marginTop: 16, gap: 6 }}>
+          <Text style={styles.productDescription}>Subtotal {order.currency} {formatMoney(order.subtotal)}</Text>
+          <Text style={styles.productDescription}>Discount {order.currency} {formatMoney(order.discountAmount)}</Text>
+          <Text style={styles.productDescription}>Taxable {order.currency} {formatMoney(order.taxableTotal)}</Text>
+          {order.taxMode === 'igst' ? <Text style={styles.productDescription}>IGST {order.currency} {formatMoney(order.igstTotal)}</Text> : <>
+            <Text style={styles.productDescription}>CGST {order.currency} {formatMoney(order.cgstTotal)}</Text>
+            <Text style={styles.productDescription}>{order.taxMode === 'cgst_utgst' ? 'UTGST' : 'SGST'} {order.currency} {formatMoney(order.sgstTotal + order.utgstTotal)}</Text>
+          </>}
+        </View>}
         <View style={styles.totalRow}>
           <Text style={styles.totalLabel}>Total · {totalUnits} units</Text>
           <Text style={styles.totalValue}>
@@ -245,6 +271,11 @@ export default function OrderDetail() {
         <DetailRow icon="pricetag-outline" label="TICKET ID" value={order.ticketNumber} />
         <DetailRow icon="person-outline" label="CUSTOMER" value={order.clientName} />
         <DetailRow icon="location-outline" label="REGION" value={order.city} />
+        {order.calculationVersion > 0 && <>
+          <DetailRow icon="document-text-outline" label="SUPPLIER GSTIN" value={order.supplierGstin} />
+          <DetailRow icon="location-outline" label="PLACE OF SUPPLY" value={gstStates.find(([code]) => code === order.placeOfSupplyCode)?.[1] ?? order.placeOfSupplyCode} />
+          {!!order.recipientGstin && <DetailRow icon="document-text-outline" label="CUSTOMER GSTIN" value={order.recipientGstin} />}
+        </>}
         <DetailRow icon="calendar-outline" label="DUE DATE" value={formatDate(order.dueDate)} />
         {!!order.address && <DetailRow icon="location-outline" label="ADDRESS" value={order.address} />}
         <DetailRow
