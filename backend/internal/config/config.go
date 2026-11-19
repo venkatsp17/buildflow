@@ -8,6 +8,7 @@ import (
 )
 
 type Config struct {
+	GSTBillingEnabled  bool
 	SupplierGSTIN      string
 	DatabaseURL        string
 	JWTSecret          string
@@ -32,6 +33,7 @@ func Load() Config {
 	}
 
 	return Config{
+		GSTBillingEnabled:  os.Getenv("GST_BILLING_ENABLED") == "true",
 		SupplierGSTIN:      strings.ToUpper(strings.TrimSpace(os.Getenv("SUPPLIER_GSTIN"))),
 		DatabaseURL:        os.Getenv("DATABASE_URL"),
 		JWTSecret:          os.Getenv("JWT_SECRET"),

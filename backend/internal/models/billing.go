@@ -92,6 +92,17 @@ func cents(value *big.Rat) int64 {
 
 func amount(cents int64) float64 { return float64(cents) / 100 }
 
+// CalculateLegacyBilling supports existing clients until the configured catalog
+// is ready and GST billing is explicitly enabled for the deployment.
+func (item *OrderItem) CalculateLegacyBilling() error {
+	if item.Quantity < 1 || item.Quantity > 100000 || !ValidUnitPrice(item.UnitPrice) {
+		return errors.New("invalid quantity or unit price")
+	}
+	gross := cents(new(big.Rat).Mul(decimalNumber(item.UnitPrice), big.NewRat(int64(item.Quantity), 1)))
+	item.GrossAmount, item.TaxableAmount, item.LineTotal = amount(gross), amount(gross), amount(gross)
+	return nil
+}
+
 func (item *OrderItem) CalculateBilling(product Product, discount float64, mode string) error {
 	if err := product.ValidateTax(); err != nil {
 		return err

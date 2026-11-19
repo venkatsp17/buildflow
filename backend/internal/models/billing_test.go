@@ -94,3 +94,15 @@ func TestTaxJurisdiction(t *testing.T) {
 		t.Fatal("incorrect GSTIN validation")
 	}
 }
+
+func TestLegacyBillingBeforeActivation(t *testing.T) {
+	item := OrderItem{Quantity: 2, UnitPrice: 465}
+	if err := item.CalculateLegacyBilling(); err != nil {
+		t.Fatal(err)
+	}
+	order := Order{Items: []OrderItem{item}}
+	order.CalculateTotals()
+	if order.Value != 930 || order.TaxTotal != 0 || order.CalculationVersion != 0 {
+		t.Fatalf("legacy billing changed before activation: %+v", order)
+	}
+}

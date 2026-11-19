@@ -3,6 +3,11 @@ Transform: AWS::Serverless-2016-10-31
 Description: Tracker backend — Gin API on Lambda behind an HTTP API, Postgres via Supabase.
 
 Parameters:
+  GstBillingEnabled:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: Enable after product tax configuration and frontend rollout.
   SupplierGstin:
     Type: String
     Default: ""
@@ -72,6 +77,7 @@ Resources:
         Variables:
           DATABASE_URL: !Ref DatabaseUrl
           SUPPLIER_GSTIN: !Ref SupplierGstin
+          GST_BILLING_ENABLED: !Ref GstBillingEnabled
           JWT_SECRET: !Sub '{{resolve:secretsmanager:${JWTSecret}}}'
       # No VpcConfig: the function isn't in a VPC, so it needs no NAT
       # Gateway to reach Supabase or any other public HTTPS endpoint

@@ -7,6 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
+	"tracker-backend/internal/config"
 	"tracker-backend/internal/middleware"
 	"tracker-backend/internal/models"
 )
@@ -80,8 +81,8 @@ type createProductRequest struct {
 	Unit        string   `json:"unit" binding:"required"`
 	Description string   `json:"description"`
 	HSNCode     string   `json:"hsnCode"`
-	GSTRate     *float64 `json:"gstRate" binding:"required"`
-	TaxCategory string   `json:"taxCategory" binding:"required,oneof=taxable nil_rated exempt non_gst"`
+	GSTRate     *float64 `json:"gstRate"`
+	TaxCategory string   `json:"taxCategory" binding:"omitempty,oneof=taxable nil_rated exempt non_gst"`
 }
 
 // Create adds a new product to the shared catalog. Super-user only (see
@@ -109,9 +110,11 @@ func (h *ProductHandler) Create(c *gin.Context) {
 	}
 
 	product := models.Product{Name: req.Name, Unit: req.Unit, Description: req.Description, CreatedByID: userID, Active: true, HSNCode: req.HSNCode, GSTRate: req.GSTRate, TaxCategory: req.TaxCategory}
-	if err := product.ValidateTax(); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
+	if config.Load().GSTBillingEnabled || req.GSTRate != nil || req.TaxCategory != "" || req.HSNCode != "" {
+		if err := product.ValidateTax(); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
 	}
 	if err := h.DB.Create(&product).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create product"})

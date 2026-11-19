@@ -35,21 +35,27 @@ var orderSortOptions = map[string]string{
 }
 
 type OrderHandler struct {
-	DB            *gorm.DB
-	SupplierGSTIN string
+	DB                *gorm.DB
+	SupplierGSTIN     string
+	GSTBillingEnabled bool
 }
 
 func NewOrderHandler(db *gorm.DB) *OrderHandler {
-	return &OrderHandler{DB: db, SupplierGSTIN: config.Load().SupplierGSTIN}
+	cfg := config.Load()
+	return &OrderHandler{DB: db, SupplierGSTIN: cfg.SupplierGSTIN, GSTBillingEnabled: cfg.GSTBillingEnabled}
 }
 
 // BillingConfig provides the supplier identity needed to preview GST.
 func (h *OrderHandler) BillingConfig(c *gin.Context) {
-	if !models.ValidGSTIN(h.SupplierGSTIN) {
+	if h.GSTBillingEnabled && !models.ValidGSTIN(h.SupplierGSTIN) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "supplier GSTIN is not configured"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"supplierGstin": h.SupplierGSTIN, "supplierStateCode": h.SupplierGSTIN[:2]})
+	state := ""
+	if models.ValidGSTIN(h.SupplierGSTIN) {
+		state = h.SupplierGSTIN[:2]
+	}
+	c.JSON(http.StatusOK, gin.H{"supplierGstin": h.SupplierGSTIN, "supplierStateCode": state, "billingEnabled": h.GSTBillingEnabled})
 }
 
 // redactPriceList clears PriceListName for anyone but a manager — sales
@@ -365,7 +371,7 @@ type createOrderRequest struct {
 	Latitude          *float64           `json:"latitude"`
 	Longitude         *float64           `json:"longitude"`
 	PriceListName     string             `json:"priceListName"`
-	PlaceOfSupplyCode string             `json:"placeOfSupplyCode" binding:"required"`
+	PlaceOfSupplyCode string             `json:"placeOfSupplyCode"`
 	Urgency           string             `json:"urgency" binding:"required,oneof=low medium high urgent"`
 	Currency          string             `json:"currency"`
 	DueDate           string             `json:"dueDate" binding:"required"`
@@ -435,18 +441,23 @@ func (h *OrderHandler) Create(c *gin.Context) {
 		return
 	}
 
-	if !models.ValidGSTIN(h.SupplierGSTIN) {
+	if h.GSTBillingEnabled && !models.ValidGSTIN(h.SupplierGSTIN) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "supplier GSTIN is not configured"})
 		return
 	}
-	taxMode, err := models.TaxMode(h.SupplierGSTIN[:2], req.PlaceOfSupplyCode)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	if req.Currency != "" && req.Currency != "₹" && req.Currency != "INR" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "GST orders must use INR"})
-		return
+	taxMode, supplierState := "", ""
+	if h.GSTBillingEnabled {
+		supplierState = h.SupplierGSTIN[:2]
+		var err error
+		taxMode, err = models.TaxMode(supplierState, req.PlaceOfSupplyCode)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		if req.Currency != "" && req.Currency != "₹" && req.Currency != "INR" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "GST orders must use INR"})
+			return
+		}
 	}
 	dueDate, err := time.Parse("2006-01-02", req.DueDate)
 	if err != nil {
@@ -500,9 +511,20 @@ func (h *OrderHandler) Create(c *gin.Context) {
 			Unit:        product.Unit,
 			UnitPrice:   unitPrice,
 		}
-		if err := items[i].CalculateBilling(product, item.DiscountPercent, taxMode); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": product.Name + ": " + err.Error()})
-			return
+		if h.GSTBillingEnabled {
+			if err := items[i].CalculateBilling(product, item.DiscountPercent, taxMode); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": product.Name + ": " + err.Error()})
+				return
+			}
+		} else {
+			if item.DiscountPercent != 0 {
+				c.JSON(http.StatusConflict, gin.H{"error": "configure and enable GST billing before applying product discounts"})
+				return
+			}
+			if err := items[i].CalculateLegacyBilling(); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				return
+			}
 		}
 	}
 
@@ -513,9 +535,9 @@ func (h *OrderHandler) Create(c *gin.Context) {
 		Latitude:           req.Latitude,
 		Longitude:          req.Longitude,
 		PriceListName:      assignedList.Name,
-		CalculationVersion: 1,
+		CalculationVersion: 0,
 		SupplierGSTIN:      h.SupplierGSTIN,
-		SupplierStateCode:  h.SupplierGSTIN[:2],
+		SupplierStateCode:  supplierState,
 		PlaceOfSupplyCode:  req.PlaceOfSupplyCode,
 		TaxMode:            taxMode,
 		Status:             models.OrderStatusPending,
@@ -526,6 +548,9 @@ func (h *OrderHandler) Create(c *gin.Context) {
 		Items:              items,
 	}
 
+	if h.GSTBillingEnabled {
+		order.CalculationVersion = 1
+	}
 	order.CalculateTotals()
 	if err := h.DB.Transaction(func(tx *gorm.DB) error {
 		customer, err := findOrCreateCustomer(tx, req.ClientName, userID)
